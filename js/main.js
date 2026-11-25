@@ -19,9 +19,13 @@ import { setupHud, updateHud, drawMap, showDelta, showBanner, hideBanner, resize
 import { initAudio, setEngine, setRaceSounds, blip, thud, wrench, setMuted, setBgmEnabled, setBgmPlaying, suspendAudio, resumeAudio } from './audio.js';
 import { WEATHER, COMPOUNDS, COMPOUND_ORDER, rollWeather, envFor, suggestCompound, wearRate } from './weather.js';
 import { SEG } from './track.js';
+import { gripOf } from './weather.js';
+import { checkAch, openAchievements, ACH } from './achievements.js';
+import { applySettings, openSettings, steerK, defaultSettings } from './settings.js';
+import { autopilot } from './physics.js';
 
 // 版の番号（sw.js の VERSION と同じにする）
-export const APP_VERSION = '0.5.0';
+export const APP_VERSION = '1.0.0';
 
 const loaded = loadGame();
 SAVE.settings.diff = SAVE.settings.diff || 'normal';
@@ -32,6 +36,7 @@ if (SAVE.season === undefined) SAVE.season = null;
 if (SAVE.cr == null) SAVE.cr = 0;
 if (!SAVE.settings.laps) SAVE.settings.laps = RACE_LAPS;
 if (SAVE.settings.bgm == null) SAVE.settings.bgm = true;
+defaultSettings(SAVE.settings);
 const LAP_CHOICES = [3, 5, 8];
 if (!SAVE.garage) SAVE.garage = newGarage();
 
@@ -78,7 +83,7 @@ const nextRoundId = () => (SAVE.season && !SAVE.season.done ? CALENDAR[SAVE.seas
 setupRender($('cv'));
 setupInput($('stage'));
 setupHud();
-setMuted(!SAVE.settings.sound);
+applySettings();
 $('titleVer').textContent = '版 ' + APP_VERSION;
 const onResize = () => { resize(); resizeHud(); };
 window.addEventListener('resize', onResize);
@@ -117,6 +122,13 @@ function refreshTitle(){
   $('titleCirc').textContent = `${track.def.name}（${track.theme.time}）`;
   const newParts = SAVE.garage.parts.filter(p => p.isNew).length;
   $('garageSub').textContent = `戦力 ${carPower()}・${cr(SAVE.cr)}${newParts ? `・NEW ${newParts}` : ''}`;
+  const done = Object.keys(SAVE.ach || {}).length;
+  const badge = $('achBadge');
+  badge.textContent = `${done}`;
+  badge.classList.toggle('on', done > 0);
+  const run = loadRun();
+  $('resumeBox').classList.toggle('hidden', !run);
+  if (run) $('resumeTxt').textContent = `${COURSES[run.track] ? COURSES[run.track].short : ''}の${run.opts && run.opts.season ? 'シーズン戦' : 'レース'}が途中です`;
 }
 
 function setRace(r){
@@ -155,6 +167,7 @@ const btn = (label, cls, onclick) => { const b = h('button', cls, label); b.oncl
 
 function openMenu(build){
   setBgmPlaying(true);
+  checkAch({});
   for (const id of ['title', 'pause', 'results', 'hud']) $(id).classList.add('hidden');
   const sh = $('menuSheet');
   sh.innerHTML = '';
@@ -301,6 +314,7 @@ function openChampion(){
     SAVE.history.push({ year: s.year, champ: rows[0].d.id, team: teams[0].t.id, me: meRow, diff: s.diff });
     s.recorded = true;
     saveGame();
+    checkAch({});
   }
   openMenu(sh => {
     sh.appendChild(h('h2', '', `シーズン${s.year} 終了`));
@@ -333,6 +347,11 @@ function start(kind, opts = {}){
   const weather = opts.weather || 'sun';
   setEnv(weather);
   closePitMenu();
+  const setup = carSetup();
+  setup.p.steerResp = CAR.steerResp * steerK();
+  G.clean = true;
+  G.snapT = 0;
+  if (kind !== 'race') clearRun();
   setRace(createRace(track, {
     diff: diff.base,
     weather,
@@ -341,7 +360,7 @@ function start(kind, opts = {}){
     practice: kind !== 'race',
     runup: kind === 'quali' ? 80 : 30,
     grid: opts.grid,
-    setup: carSetup(),
+    setup,
     arts, playerArt,
   }));
   G.mode = 'lights';
@@ -416,6 +435,7 @@ $('pitBtn').onclick = () => {
 };
 
 function onLap(e){
+  if (G.kind === 'practice'){ SAVE.stats.practiceLaps = (SAVE.stats.practiceLaps || 0) + 1; }
   const b = bestOf();
   if (b == null || e.lap < b){
     SAVE.best[track.def.id] = e.lap;
@@ -431,6 +451,7 @@ function onLap(e){
 }
 
 function onFinish(){
+  clearRun();
   G.mode = 'finished';
   G.finishT = 0;
   if (G.kind === 'quali'){
@@ -446,6 +467,7 @@ function showQuali(){
   const mine = G.race.player.lastLap;
   const g = gridFrom(aiQualiTimes(track, diffById(s.diff).base, G.weather), mine);
   const pos = g.order.indexOf(ME) + 1;
+  if (pos === 1){ SAVE.stats.poles = (SAVE.stats.poles || 0) + 1; saveGame(); }
   G.mode = 'menu';
   openMenu(sh => {
     sh.appendChild(h('h2', '', `予選結果　${track.def.short}`));
@@ -492,8 +514,13 @@ function showResults(){
   // 賞金とパーツ
   const prize = prizeFor(me.pos, { season: !!gained, pole: !!G.opts.pole, fastest: fastest === me, laps: r.laps });
   SAVE.cr += prize.cr;
+  SAVE.stats.crTotal = (SAVE.stats.crTotal || 0) + prize.cr;
+  if (fastest === me) SAVE.stats.fastest = (SAVE.stats.fastest || 0) + 1;
+  if (me.pos === 1) rec.wins = (rec.wins || 0) + 1;
   const drop = grantPart(randomSlot(), dropRarity(me.pos));
   saveGame();
+  checkAch({ race: true, pos: me.pos, grid, clean: G.clean, weather: G.weather, night: track.theme.time === '夜', laps: r.laps,
+    stops: me.car.stops, diff: G.opts.season && s ? s.diff : SAVE.settings.diff });
 
   $('rTitle').textContent = (gained ? `第${s.round}戦 ` : '') + `レース結果　${track.def.name}`;
   const moved = grid - me.pos;
@@ -560,7 +587,7 @@ function updateSoundBtn(){
 }
 $('bgmBtn').onclick = () => {
   SAVE.settings.bgm = !SAVE.settings.bgm;
-  setBgmEnabled(SAVE.settings.bgm);
+  applySettings();
   saveGame();
   updateSoundBtn();
 };
@@ -573,13 +600,14 @@ $('pauseBtn').onclick = pause;
 $('resumeBtn').onclick = resume;
 $('restartBtn').onclick = () => start(G.kind, G.opts);
 $('quitBtn').onclick = () => {
+  clearRun();
   setEngine(0, 0, false);
   if (G.opts.season || G.kind === 'quali'){ $('pause').classList.add('hidden'); $('hud').classList.add('hidden'); G.mode = 'menu'; openSeason(); }
   else showTitle();
 };
 $('soundBtn').onclick = () => {
   SAVE.settings.sound = !SAVE.settings.sound;
-  setMuted(!SAVE.settings.sound);
+  applySettings();
   saveGame();
   updateSoundBtn();
 };
@@ -589,10 +617,47 @@ window.addEventListener('keydown', e => {
 
 // 裏に回ったら止める
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden){ if (!G.noAutoPause) pause(); suspendAudio(); saveGame(); }
+  if (document.hidden){ if (!G.noAutoPause) pause(); snapRun(); suspendAudio(); saveGame(); }
   else resumeAudio();
 });
-window.addEventListener('pagehide', saveGame);
+window.addEventListener('pagehide', () => { snapRun(); saveGame(); });
+
+// ---- 途中から再開（レース中の状態を保存しておく） ----
+const RUN_KEY = 'gprush-run';
+function loadRun(){ try { return JSON.parse(localStorage.getItem(RUN_KEY) || 'null'); } catch(e){ return null; } }
+function clearRun(){ try { localStorage.removeItem(RUN_KEY); } catch(e){} }
+function snapRun(){
+  const racing = G.kind === 'race' && (G.mode === 'race' || (G.mode === 'paused' && G.before === 'race'));
+  if (!racing || !G.race) return;
+  const r = G.race;
+  const keys = ['z', 'x', 'speed', 'lapsDone', 'lapStart', 'best', 'lastLap', 'finished', 'finishT', 'tyre', 'wear', 'pitReq', 'pitT', 'inPit', 'newTyre', 'stops', 'prevD', 'grid'];
+  const cars = r.cars.map(c => { const o = { id: c.driver.id }; for (const k of keys) o[k] = c[k]; return o; });
+  const snap = { v: 1, track: track.def.id, kind: G.kind, opts: G.opts, t: r.t, leaderDone: !!r.leaderDone, cars, clean: G.clean, at: Date.now() };
+  try { localStorage.setItem(RUN_KEY, JSON.stringify(snap)); } catch(e){}
+}
+function resumeRun(){
+  const snap = loadRun();
+  if (!snap || !COURSES[snap.track]){ clearRun(); refreshTitle(); return; }
+  setTrack(snap.track);
+  start(snap.kind, snap.opts);
+  const r = G.race;
+  r.started = true; r.t = snap.t; r.leaderDone = snap.leaderDone;
+  for (const sc of snap.cars){
+    const c = r.cars.find(x => x.driver.id === sc.id);
+    if (!c) continue;
+    for (const [k, v] of Object.entries(sc)) if (k !== 'id') c[k] = v;
+    c.grip = gripOf(c.tyre, c.wear, r.weather);
+  }
+  G.clean = snap.clean;
+  G.lights = 0;
+  hideBanner();
+  G.mode = 'race';
+  pause();
+}
+$('resumeGo').onclick = resumeRun;
+$('resumeNo').onclick = () => { clearRun(); refreshTitle(); };
+$('achBtn').onclick = () => openAchievements(openMenu, backToTitle);
+$('setBtn').onclick = () => openSettings(openMenu, backToTitle);
 
 // ---- 毎フレームの処理 ----
 function update(dt){
@@ -613,7 +678,15 @@ function update(dt){
   } else if (G.mode === 'race'){
     // autoDrive は確認用（コンソールで T.G.autoDrive = true にすると自動で走る）
     const ctl = G.autoDrive ? null : { steer: steerInput(), brake: input.brake, throttle: true };
+    // ブレーキアシスト：カーブに対して速すぎるときは自動でブレーキ
+    if (ctl && SAVE.settings.assist && !ctl.brake && !r.player.inPit){
+      if (autopilot(r.player, track, 0.9).brake) ctl.brake = true;
+    }
     stepRace(r, dt, ctl);
+    const ps = r.player.surface;
+    if (ps === 'grass' || ps === 'gravel') G.clean = false;
+    G.snapT += dt;
+    if (G.snapT > 3){ G.snapT = 0; snapRun(); }
     if (G.hintT > 0){ G.hintT -= dt; if (G.hintT <= 0) $('hHint').classList.add('gone'); }
   } else if (G.mode === 'finished'){
     stepRace(r, dt, null);
@@ -628,8 +701,8 @@ function update(dt){
     if (G.mode !== 'race' && G.mode !== 'finished') break;
     if (e.type === 'lap') onLap(e);
     else if (e.type === 'finish') onFinish();
-    else if (e.type === 'hit'){ thud(); G.shake = 0.35; }
-    else if (e.type === 'bump'){ thud(); G.shake = Math.max(G.shake, Math.min(0.35, e.rel / CAR.max * 2)); }
+    else if (e.type === 'hit'){ thud(); G.shake = 0.35; G.clean = false; }
+    else if (e.type === 'bump'){ thud(); G.clean = false; G.shake = Math.max(G.shake, Math.min(0.35, e.rel / CAR.max * 2)); }
     else if (e.type === 'pitIn'){ wrench(); showBanner(`<b>PIT STOP</b><span>${COMPOUNDS[e.tyre].name}に交換中</span>`, 0); }
     else if (e.type === 'pitOut'){ showBanner(`<b>PIT OUT</b><span>${COMPOUNDS[e.tyre].name}</span>`, 1500); }
   }
@@ -644,6 +717,9 @@ function update(dt){
 
 let lastT = performance.now();
 function frame(now){
+  // 省電力：メニューの画面と、画質「省電力」では1秒に30回だけ描く
+  const racingNow = G.mode === 'race' || G.mode === 'lights' || G.mode === 'finished';
+  if ((!racingNow || SAVE.settings.quality === 'eco') && now - lastT < 1000 / 30 - 2){ requestAnimationFrame(frame); return; }
   const dt = Math.min(0.05, (now - lastT) / 1000);
   lastT = now;
   // 物理は細かく刻む（フレームが落ちても動きが変わらないように）
@@ -717,11 +793,11 @@ buildLaps();
 setBgmEnabled(SAVE.settings.bgm);
 showTitle();
 // 最初のタップで音を出せるようにする（iPhone は操作のあとでないと音が出ない）
-const unlock = () => { initAudio(); setBgmEnabled(SAVE.settings.bgm); document.removeEventListener('pointerdown', unlock, true); };
+const unlock = () => { initAudio(); applySettings(); document.removeEventListener('pointerdown', unlock, true); };
 document.addEventListener('pointerdown', unlock, true);
 requestAnimationFrame(frame);
 setupOffline();
 if (loaded === 'broken') toast('セーブデータを読めなかったため、新しく始めました（元のデータは別名で保管）', 4000);
 
 // 調整・確認用
-window.T = { G, get track(){ return track; }, setTrack, SAVE, CAR, start, showTitle, showResults, openSeason, pause, resume };
+window.T = { G, get track(){ return track; }, setTrack, SAVE, CAR, start, showTitle, showResults, openSeason, pause, resume, snapRun, resumeRun, loadRun, checkAch };

@@ -26,8 +26,11 @@ export function loadGame(){
   }
 }
 
-let lastWritten = '';
+let lastWritten = '', blocked = false;
+// 読み込み・全消去のあとは、起動し直すまで書き込まない（閉じるときの保存で上書きしないように）
+export function blockSave(){ blocked = true; }
 export function saveGame(){
+  if (blocked) return;
   const s = JSON.stringify(SAVE);
   if (s === lastWritten) return;
   try { localStorage.setItem(KEY, s); lastWritten = s; } catch(e){}

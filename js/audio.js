@@ -1,7 +1,7 @@
 // 音（すべてコードで作る。最初のタップで鳴らせるようになる）
 // レース中：エンジン・タイヤのきしみ・風・芝の振動・縁石・近くの車・雨。メニュー：BGM
 let ac = null, master = null, sfx = null, bgmBus = null, eng = null, fx = null, noiseBuf = null;
-let muted = false, bgmOn = true;
+let muted = false, bgmOn = true, sfxVol = 1, bgmVol = 1;
 
 export function initAudio(){
   if (ac){ if (ac.state === 'suspended') ac.resume().catch(() => {}); return; }
@@ -11,7 +11,7 @@ export function initAudio(){
   master = ac.createGain();
   master.gain.value = muted ? 0 : 1;
   master.connect(ac.destination);
-  sfx = ac.createGain(); sfx.gain.value = 1; sfx.connect(master);
+  sfx = ac.createGain(); sfx.gain.value = sfxVol; sfx.connect(master);
   bgmBus = ac.createGain(); bgmBus.gain.value = 0; bgmBus.connect(master);
 
   // 白いノイズ（2秒をくり返す）
@@ -129,14 +129,21 @@ let bgmWanted = false, bgmTimer = 0, nextT = 0, step = 0;
 
 export function setBgmEnabled(on){
   bgmOn = on;
-  if (bgmBus) ramp(bgmBus.gain, bgmWanted && bgmOn ? 0.16 : 0, 0.3);
+  if (bgmBus) ramp(bgmBus.gain, bgmWanted && bgmOn ? 0.16 * bgmVol : 0, 0.3);
+}
+
+// 音量（0〜1）
+export function setVolumes(s, b){
+  sfxVol = s; bgmVol = b;
+  if (sfx) ramp(sfx.gain, s, 0.05);
+  if (bgmBus) ramp(bgmBus.gain, bgmWanted && bgmOn ? 0.16 * bgmVol : 0, 0.1);
 }
 
 // メニューを開いたら true、レースが始まったら false
 export function setBgmPlaying(on){
   bgmWanted = on;
   if (!ac) return;
-  ramp(bgmBus.gain, on && bgmOn ? 0.16 : 0, on ? 0.6 : 0.25);
+  ramp(bgmBus.gain, on && bgmOn ? 0.16 * bgmVol : 0, on ? 0.6 : 0.25);
   if (on && !bgmTimer){
     nextT = ac.currentTime + 0.1;
     bgmTimer = setInterval(schedule, 25);

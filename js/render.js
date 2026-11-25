@@ -21,7 +21,7 @@ export function setupRender(cv){
 
 // 画面の大きさが変わったら測り直す
 export function resize(){
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const dpr = Math.min(window.devicePixelRatio || 1, V.dprCap || 2);
   const w = V.cv.clientWidth || window.innerWidth, h = V.cv.clientHeight || window.innerHeight;
   const W = Math.max(1, Math.round(w * dpr)), H = Math.max(1, Math.round(h * dpr));
   if (W === V.W && H === V.H && dpr === V.dpr) return;
@@ -33,6 +33,14 @@ export function resize(){
   V.layers = null;
 }
 export const view = V;
+
+// 画質：high（きれい）・normal（ふつう）・eco（省電力：解像度と描く距離を下げる）
+export function setQuality(q){
+  V.dprCap = q === 'eco' ? 1 : q === 'normal' ? 1.5 : 2;
+  CAM.dist = q === 'eco' ? 180 : q === 'normal' ? 240 : 280;
+  V.W = 0;
+  if (V.cv) resize();
+}
 
 // ---- 色（遠くほど霧の色に近づける） ----
 const hexRgb = h => { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
