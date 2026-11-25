@@ -55,11 +55,13 @@
   <div id="title">
     <div class="tlogo"><h1>GP<span>ラッシュ</span></h1><p>タップで走る、架空のグランプリ</p></div>
     <div class="tmenu">
-      <button class="primary" id="raceBtn">レース<small id="raceSub"></small></button>
-      <button id="practiceBtn">練習走行<small id="practiceSub"></small></button>
+      <button class="primary" id="seasonBtn">シーズン<small id="seasonSub"></small></button>
+      <button id="quickBtn">クイックレース<small>サーキットを選ぶ</small></button>
+      <button id="practiceBtn">練習走行<small>1人で走る</small></button>
     </div>
     <div class="diff" id="diffSel" role="radiogroup" aria-label="ライバルの強さ"></div>
     <div class="tver" id="titleVer"></div>
+    <div class="tcirc" id="titleCirc"></div>
   </div>
 
   <!-- 一時停止 -->
@@ -80,12 +82,12 @@
       <h2 id="rTitle">レース結果</h2>
       <p class="rsum" id="rSummary"></p>
       <div class="rtable" id="rTable"></div>
-      <div class="rbtns">
-        <button class="primary" id="againBtn">もう一度</button>
-        <button id="toTitleBtn">タイトルへ</button>
-      </div>
+      <div class="rbtns" id="rBtns"></div>
     </div>
   </div>
+
+  <!-- メニュー（シーズン・サーキット選び・順位表・予選の結果） -->
+  <div id="menu" class="hidden"><div class="sheet wide" id="menuSheet"></div></div>
 
   <div id="toast" role="status"></div>
 </div>

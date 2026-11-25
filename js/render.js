@@ -11,7 +11,7 @@ export const CAM = {
 };
 export const PLAYER_Z = CAM.height * CAM.depth;   // カメラから自分の車までの距離
 
-const V = { cv: null, g: null, W: 0, H: 0, K: 0, HOR: 0, dpr: 1, layers: null, fogRgb: [0, 0, 0], fogHex: '' };
+const V = { cv: null, g: null, W: 0, H: 0, K: 0, HOR: 0, dpr: 1, layers: null, fogRgb: [0, 0, 0], tintRgb: null, tintK: 0, key: '' };
 
 export function setupRender(cv){
   V.cv = cv;
@@ -37,13 +37,16 @@ export const view = V;
 // ---- 色（遠くほど霧の色に近づける） ----
 const hexRgb = h => { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
 const fogCache = new Map();
+// 景色の色：時間帯の色味（tint）をかけてから、遠いほど霧の色に近づける
 function fogC(hex, f){
   const q = Math.round(f * 24);
-  if (q <= 0) return hex;
-  const key = hex + V.fogHex + q;
+  if (q <= 0 && !V.tintRgb) return hex;
+  const key = hex + V.key + q;
   let c = fogCache.get(key);
   if (!c){
-    const a = hexRgb(hex), b = V.fogRgb, t = q / 24;
+    let a = hexRgb(hex);
+    if (V.tintRgb){ const t = V.tintK, b = V.tintRgb; a = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]; }
+    const b = V.fogRgb, t = q / 24;
     c = `rgb(${Math.round(a[0] + (b[0] - a[0]) * t)},${Math.round(a[1] + (b[1] - a[1]) * t)},${Math.round(a[2] + (b[2] - a[2]) * t)})`;
     fogCache.set(key, c);
   }
@@ -51,37 +54,127 @@ function fogC(hex, f){
 }
 const fogAt = n => { const t = n / CAM.dist; return Math.min(1, t * t * 1.15) * 0.92; };
 
-// ---- 背景（雲・山・丘）。横につながる絵を作って、カーブに合わせて横に流す ----
+// ---- 背景（雲・遠景・近景）。横につながる絵を作って、カーブに合わせて横に流す ----
 const mk = (w, h) => { const c = document.createElement('canvas'); c.width = Math.max(1, w); c.height = Math.max(1, h); return c; };
+const seeded = seed => { let s = seed; return () => (s = (s * 16807) % 2147483647) / 2147483647; };
 
-function ridge(g, TW, h, top, amp, waves, seed, fill){
+function ridgePath(g, TW, h, top, amp, waves, seed){
   // 横につながるように、周期が幅の整数分の1の波だけを足す
   const ph = waves.map((_, i) => (Math.sin(seed * 12.9898 + i * 78.233) * 43758.5453) % (Math.PI * 2));
-  g.fillStyle = fill;
   g.beginPath(); g.moveTo(0, h);
   for (let x = 0; x <= TW; x += 3){
     let y = 0;
     waves.forEach(([k, a], i) => { y += a * Math.sin((x / TW) * Math.PI * 2 * k + ph[i]); });
     g.lineTo(x, top + amp * y);
   }
-  g.lineTo(TW, h); g.closePath(); g.fill();
+  g.lineTo(TW, h); g.closePath();
+}
+function ridge(g, TW, h, top, amp, waves, seed, fill){
+  ridgePath(g, TW, h, top, amp, waves, seed);
+  g.fillStyle = fill; g.fill();
+}
+const vgrad = (g, h, a, b, y0 = 0) => { const gg = g.createLinearGradient(0, y0, 0, h); gg.addColorStop(0, a); gg.addColorStop(1, b); return gg; };
+
+function farLayer(th, TW){
+  const { W, H } = V, f = th.far;
+  if (f.type === 'sea'){
+    const sea = mk(TW, Math.round(H * 0.06)), c = sea.getContext('2d'), h = sea.height;
+    c.fillStyle = vgrad(c, h, f.c[0], f.c[1]); c.fillRect(0, 0, TW, h);
+    const r = seeded(11);
+    c.fillStyle = 'rgba(255,255,255,0.35)';
+    for (let i = 0; i < 90; i++) c.fillRect(r() * TW, r() * h, W * (0.004 + r() * 0.01), Math.max(1, h * 0.03));
+    return sea;
+  }
+  if (f.type === 'city'){
+    const cv = mk(TW, Math.round(H * 0.26)), c = cv.getContext('2d'), h = cv.height;
+    const r = seeded(23), u = Math.max(1, V.dpr);
+    let x = 0;
+    while (x < TW){
+      let bw = W * (0.025 + r() * 0.05);
+      if (x + bw > TW) bw = TW - x;
+      const bh = h * (0.2 + r() * 0.75);
+      c.fillStyle = f.c; c.fillRect(x, h - bh, bw, bh);
+      c.fillStyle = 'rgba(255,255,255,0.05)'; c.fillRect(x, h - bh, bw * 0.3, bh);
+      for (let wy = h - bh + 5 * u; wy < h - 3 * u; wy += 7 * u){
+        for (let wx = x + 3 * u; wx < x + bw - 4 * u; wx += 6 * u){
+          if (r() < f.lit){ c.fillStyle = r() < 0.8 ? '#ffd98a' : '#9fe3ff'; c.fillRect(wx, wy, 3 * u, 3 * u); }
+        }
+      }
+      x += bw + W * 0.003;
+    }
+    return cv;
+  }
+  const cv = mk(TW, Math.round(H * 0.3)), c = cv.getContext('2d'), h = cv.height;
+  if (f.type === 'dunes'){
+    ridge(c, TW, h, h * 0.62, h * 0.18, [[2, 0.6], [3, 0.3], [5, 0.12]], 4, vgrad(c, h, f.c, th.fog, h * 0.4));
+    return cv;
+  }
+  if (f.type === 'snowy'){
+    // とがった高い山。上のほうだけ白くする
+    const W5 = [[3, 0.5], [5, 0.32], [11, 0.2], [19, 0.1]];
+    ridge(c, TW, h, h * 0.42, h * 0.42, W5, 13, vgrad(c, h, f.c, th.fog));
+    c.save();
+    ridgePath(c, TW, h, h * 0.42, h * 0.42, W5, 13);
+    c.clip();
+    c.fillStyle = vgrad(c, h * 0.62, 'rgba(255,255,255,1)', 'rgba(255,255,255,0)', h * 0.1);
+    c.fillRect(0, 0, TW, h * 0.62);
+    c.restore();
+  } else {
+    ridge(c, TW, h, h * 0.45, h * 0.3, [[2, 0.5], [3, 0.35], [7, 0.18], [13, 0.08]], 3, vgrad(c, h, f.c, th.fog));
+  }
+  return cv;
 }
 
-function buildLayers(def){
+function nearLayer(th, TW){
+  const { H } = V, n = th.near;
+  if (n.type === 'none') return null;
+  if (n.type === 'sea'){
+    const sea = mk(TW, Math.round(H * 0.05)), c = sea.getContext('2d'), h = sea.height;
+    c.fillStyle = vgrad(c, h, n.c[0], n.c[1]); c.fillRect(0, 0, TW, h);
+    const r = seeded(5);
+    c.fillStyle = 'rgba(255,230,180,0.45)';
+    for (let i = 0; i < 70; i++) c.fillRect(r() * TW, r() * h, V.W * (0.004 + r() * 0.012), Math.max(1, h * 0.04));
+    return sea;
+  }
+  const cv = mk(TW, Math.round(H * 0.16)), c = cv.getContext('2d'), h = cv.height;
+  if (n.type === 'forest'){
+    ridge(c, TW, h, h * 0.4, h * 0.2, [[3, 0.5], [6, 0.3]], 7, vgrad(c, h, n.c[0], n.c[1]));
+    ridge(c, TW, h, h * 0.62, h * 0.2, [[5, 0.3], [37, 0.3], [61, 0.25], [97, 0.15]], 8, vgrad(c, h, n.forest[0], n.forest[1], h * 0.3));
+    return cv;
+  }
+  ridge(c, TW, h, h * 0.45, h * 0.25, [[3, 0.5], [5, 0.3], [11, 0.15]], 9, vgrad(c, h, n.c[0], n.c[1]));
+  // 手前の森（細かいギザギザ）
+  ridge(c, TW, h, h * 0.72, h * 0.16, [[4, 0.45], [29, 0.2], [47, 0.14], [71, 0.1]], 5, vgrad(c, h, n.forest[0], n.forest[1], h * 0.4));
+  return cv;
+}
+
+function buildLayers(th){
   const { W, H, g } = V;
-  V.fogHex = def.fog; V.fogRgb = hexRgb(def.fog);
+  V.fogRgb = hexRgb(th.fog);
+  V.tintRgb = th.tint ? hexRgb(th.tint[0]) : null;
+  V.tintK = th.tint ? th.tint[1] : 0;
+  V.key = th.fog + (th.tint ? th.tint.join() : '');
   const TW = Math.ceil(W * 1.6);
   const sky = g.createLinearGradient(0, 0, 0, V.HOR);
-  sky.addColorStop(0, def.sky[0]); sky.addColorStop(0.6, def.sky[1]); sky.addColorStop(1, def.sky[2]);
+  sky.addColorStop(0, th.sky[0]); sky.addColorStop(0.6, th.sky[1]); sky.addColorStop(1, th.sky[2]);
 
-  // 雲
+  // 雲（夕方は色味をかける）と星
   const clouds = mk(TW, Math.round(H * 0.45));
   {
     const c = clouds.getContext('2d');
-    let s = 7;
-    const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    const r = seeded(7);
+    if (th.stars){
+      for (let i = 0; i < 160; i++){
+        c.fillStyle = `rgba(255,255,255,${0.3 + r() * 0.6})`;
+        const s = Math.max(1, V.dpr * (r() < 0.1 ? 1.6 : 1));
+        c.fillRect(r() * TW, r() * clouds.height * 0.8, s, s);
+      }
+    }
+    const cc = th.tint ? hexRgb(th.tint[0]).map(v => Math.round(255 + (v - 255) * th.tint[1] * 1.6)) : [255, 255, 255];
+    const col = a => `rgba(${cc[0]},${cc[1]},${cc[2]},${a})`;
+    const count = Math.round(9 * (th.clouds || 0));
     // 横に平たい雲（ぼかした楕円を重ねる）
-    for (let i = 0; i < 9; i++){
+    for (let i = 0; i < count; i++){
       const cx = r() * TW, cy = clouds.height * (0.15 + r() * 0.6), w = W * (0.12 + r() * 0.16);
       const puffs = 5 + Math.floor(r() * 4);
       const ps = [];
@@ -92,38 +185,18 @@ function buildLayers(def){
           c.translate(cx + ox + px, cy + py);
           c.scale(1, 0.42);
           const gg = c.createRadialGradient(0, -rad * 0.2, rad * 0.05, 0, 0, rad);
-          gg.addColorStop(0, 'rgba(255,255,255,0.75)'); gg.addColorStop(0.55, 'rgba(255,255,255,0.45)'); gg.addColorStop(1, 'rgba(255,255,255,0)');
+          gg.addColorStop(0, col(0.75)); gg.addColorStop(0.55, col(0.45)); gg.addColorStop(1, col(0));
           c.fillStyle = gg; c.fillRect(-rad, -rad, rad * 2, rad * 2);
           c.restore();
         }
       }
     }
   }
-
-  // 遠くの山
-  const mts = mk(TW, Math.round(H * 0.3));
-  {
-    const c = mts.getContext('2d'), h = mts.height;
-    const gg = c.createLinearGradient(0, 0, 0, h);
-    gg.addColorStop(0, '#7f97b8'); gg.addColorStop(1, def.fog);
-    ridge(c, TW, h, h * 0.45, h * 0.3, [[2, 0.5], [3, 0.35], [7, 0.18], [13, 0.08]], 3, gg);
-  }
-  // 手前の丘（木の並び）
-  const hills = mk(TW, Math.round(H * 0.16));
-  {
-    const c = hills.getContext('2d'), h = hills.height;
-    const gg = c.createLinearGradient(0, 0, 0, h);
-    gg.addColorStop(0, '#4d8a43'); gg.addColorStop(1, '#8bb98a');
-    ridge(c, TW, h, h * 0.45, h * 0.25, [[3, 0.5], [5, 0.3], [11, 0.15]], 9, gg);
-    // 手前の森（細かいギザギザの濃い緑）
-    const fg = c.createLinearGradient(0, h * 0.4, 0, h);
-    fg.addColorStop(0, '#2f6a35'); fg.addColorStop(1, '#5d9a58');
-    ridge(c, TW, h, h * 0.72, h * 0.16, [[4, 0.45], [29, 0.2], [47, 0.14], [71, 0.1]], 5, fg);
-  }
-  return { def, sky, clouds, mts, hills, TW };
+  return { th, sky, clouds, far: farLayer(th, TW), near: nearLayer(th, TW), TW };
 }
 
 function drawLayer(cv, off, bottom){
+  if (!cv) return;
   const { g, W } = V;
   const TW = cv.width, y = Math.round(bottom - cv.height);
   let x = -(((off % TW) + TW) % TW);
@@ -134,11 +207,12 @@ function drawBackground(skyOff, playerY){
   const { g, W, H, HOR } = V, L = V.layers;
   g.fillStyle = L.sky; g.fillRect(0, 0, W, HOR + 2);
   // 地平線より下（道が下っているときに見える部分）
-  g.fillStyle = fogC(L.def.grass[0], 0.75); g.fillRect(0, HOR, W, H - HOR);
-  const lift = -playerY / SEG * H * 0.004;
+  g.fillStyle = fogC(L.th.grass[0], 0.75); g.fillRect(0, HOR, W, H - HOR);
+  // 高いところにいるときは背景を少しだけ上げる（上げすぎると遠くの山が手前の丘に隠れる）
+  const lift = Math.max(-0.035 * H, Math.min(0.035 * H, -playerY / SEG * H * 0.0015));
   drawLayer(L.clouds, skyOff * W * 0.12, HOR * 0.75 + lift * 0.3);
-  drawLayer(L.mts, skyOff * W * 0.3, HOR + 2 + lift * 0.6);
-  drawLayer(L.hills, skyOff * W * 0.6, HOR + 3 + lift);
+  drawLayer(L.far, skyOff * W * 0.3, HOR + 2 + lift * 0.6);
+  drawLayer(L.near, skyOff * W * 0.6, HOR + 3 + lift);
 }
 
 // ---- 道 ----
@@ -323,7 +397,7 @@ function drawPlayer(v){
 export function render(v){
   const { track } = v;
   const g = V.g, W = V.W, H = V.H;
-  if (!V.layers || V.layers.def !== track.def) V.layers = buildLayers(track.def);
+  if (!V.layers || V.layers.th !== track.theme) V.layers = buildLayers(track.theme);
 
   const N = track.N, segs = track.segs;
   const base = track.at(v.z);

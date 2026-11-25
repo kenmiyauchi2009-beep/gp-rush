@@ -16,18 +16,60 @@ const mk = (w, h) => { const c = document.createElement('canvas'); c.width = w; 
 const rr = (g, x, y, w, h, r) => { g.beginPath(); g.roundRect ? g.roundRect(x, y, w, h, r) : g.rect(x, y, w, h); };
 
 // name → { cv, ww（ワールドでの幅）, collide（ぶつかるか）, center（真ん中に置くか） }
+// テーマ（サーキット）ごとに作り、夕方・夜は色味をかけておく。いま使うテーマの絵が SPRITES に入る。
 export const SPRITES = {};
+const cache = new Map();
 
-export function makeSprites(){
+const TREE_COLS = {
+  tree: ['#6fbf4a', '#3f8f2c', '#2a6a20'],
+  sakura: ['#ffe1ee', '#f5a9c8', '#d97fa6'],
+  autumn: ['#ffc15a', '#e8742a', '#a8461d'],
+};
+
+function build(theme){
   const r = rng(42);
-  SPRITES.tree = { cv: tree(r), ww: 1100, collide: true };
-  SPRITES.pine = { cv: pine(r), ww: 760, collide: true };
-  SPRITES.bush = { cv: bush(r), ww: 900, collide: false };
-  SPRITES.tirewall = { cv: tirewall(), ww: 1500, collide: true };
-  SPRITES.marshal = { cv: marshal(), ww: 900, collide: true };
-  SPRITES.gantry = { cv: gantry(), ww: ROAD_W * 2.5, collide: false, center: true, lights: true };
-  for (const n of ['300', '200', '100']) SPRITES['board' + n] = { cv: board(n), ww: 420, collide: true };
-  SPONSORS.forEach((s, i) => { SPRITES['billboard' + i] = { cv: billboard(s), ww: 2300, collide: true }; });
+  const S = {};
+  S.tree = { cv: tree(r, TREE_COLS.tree), ww: 1100, collide: true };
+  S.sakura = { cv: tree(r, TREE_COLS.sakura), ww: 1150, collide: true };
+  S.autumn = { cv: tree(r, TREE_COLS.autumn), ww: 1100, collide: true };
+  S.pine = { cv: pine(r), ww: 760, collide: true };
+  S.bush = { cv: bush(r), ww: 900, collide: false };
+  S.palm = { cv: palm(r), ww: 1000, collide: true };
+  S.cactus = { cv: cactus(), ww: 520, collide: true };
+  S.rock = { cv: rock(r), ww: 900, collide: true };
+  S.lamp = { cv: lamp(), ww: 700, collide: true, glow: true };
+  S.tirewall = { cv: tirewall(), ww: 1500, collide: true };
+  S.marshal = { cv: marshal(), ww: 900, collide: true };
+  S.gantry = { cv: gantry(), ww: ROAD_W * 2.5, collide: false, center: true, lights: true };
+  for (const n of ['300', '200', '100']) S['board' + n] = { cv: board(n), ww: 420, collide: true };
+  SPONSORS.forEach((sp, i) => { S['billboard' + i] = { cv: billboard(sp), ww: 2300, collide: true }; });
+  // 夕方・夜の色味をかける（街灯の光はあとから明るく描き直す）
+  if (theme.tint){
+    const [col, k] = theme.tint;
+    for (const [name, sp] of Object.entries(S)){
+      const g = sp.cv.getContext('2d');
+      g.globalCompositeOperation = 'source-atop';
+      g.globalAlpha = k;
+      g.fillStyle = col;
+      g.fillRect(0, 0, sp.cv.width, sp.cv.height);
+      g.globalAlpha = 1;
+      g.globalCompositeOperation = 'source-over';
+      if (name === 'lamp') lampGlow(g, sp.cv.width, sp.cv.height);
+    }
+  }
+  // 道の左側の街灯は左右を反転（腕が道のほうを向くように）
+  const f = mk(S.lamp.cv.width, S.lamp.cv.height), fg = f.getContext('2d');
+  fg.translate(f.width, 0); fg.scale(-1, 1); fg.drawImage(S.lamp.cv, 0, 0);
+  S.lampL = { cv: f, ww: S.lamp.ww, collide: true };
+  return S;
+}
+
+// サーキットを替えたら呼ぶ
+export function useTheme(theme){
+  let S = cache.get(theme);
+  if (!S){ S = build(theme); cache.set(theme, S); }
+  for (const k of Object.keys(SPRITES)) delete SPRITES[k];
+  Object.assign(SPRITES, S);
 }
 
 // 置いた景色の名前から絵を引く（看板は番号で入れ替わる）
@@ -36,7 +78,7 @@ export function spriteOf(sp){
   return SPRITES[sp.name];
 }
 
-function tree(r){
+function tree(r, cols){
   const W = 260, H = 330, c = mk(W, H), g = c.getContext('2d');
   // 幹
   const tg = g.createLinearGradient(W / 2 - 14, 0, W / 2 + 14, 0);
@@ -51,7 +93,7 @@ function tree(r){
   blobs.sort((a, b) => a[1] - b[1]);
   for (const [x, y, rad] of blobs){
     const gg = g.createRadialGradient(x - rad * 0.35, y - rad * 0.45, rad * 0.1, x, y, rad);
-    gg.addColorStop(0, '#6fbf4a'); gg.addColorStop(0.6, '#3f8f2c'); gg.addColorStop(1, '#2a6a20');
+    gg.addColorStop(0, cols[0]); gg.addColorStop(0.6, cols[1]); gg.addColorStop(1, cols[2]);
     g.fillStyle = gg; g.beginPath(); g.arc(x, y, rad, 0, Math.PI * 2); g.fill();
   }
   return c;
@@ -81,6 +123,75 @@ function bush(r){
     g.fillStyle = gg; g.beginPath(); g.arc(x, y, rad, 0, Math.PI * 2); g.fill();
   }
   return c;
+}
+
+function palm(r){
+  const W = 280, H = 420, c = mk(W, H), g = c.getContext('2d');
+  // 少し曲がった幹
+  g.strokeStyle = '#8a6a44'; g.lineCap = 'round';
+  for (let i = 0; i < 12; i++){
+    const t0 = i / 12, t1 = (i + 1) / 12;
+    const x = t => W / 2 + Math.sin(t * 1.6) * 26 - 13, y = t => H - t * H * 0.72;
+    g.lineWidth = 22 - i * 0.9;
+    g.beginPath(); g.moveTo(x(t0), y(t0)); g.lineTo(x(t1), y(t1)); g.stroke();
+    g.strokeStyle = i % 2 ? '#8a6a44' : '#7a5c3a';
+  }
+  // 葉
+  const tx = W / 2 + Math.sin(1.6) * 26 - 13, ty = H * 0.28;
+  for (let i = 0; i < 9; i++){
+    const a = -Math.PI + (i / 8) * Math.PI + (r() - 0.5) * 0.2;
+    const len = 110 + r() * 30;
+    g.strokeStyle = i % 2 ? '#2f7d32' : '#3f9a3c'; g.lineWidth = 16;
+    g.beginPath(); g.moveTo(tx, ty);
+    g.quadraticCurveTo(tx + Math.cos(a) * len * 0.6, ty + Math.sin(a) * len * 0.6 - 30, tx + Math.cos(a) * len, ty + Math.sin(a) * len * 0.5 + 40);
+    g.stroke();
+  }
+  g.fillStyle = '#5a3d22'; g.beginPath(); g.arc(tx, ty + 6, 12, 0, Math.PI * 2); g.fill();
+  return c;
+}
+
+function cactus(){
+  const W = 160, H = 300, c = mk(W, H), g = c.getContext('2d');
+  const gg = g.createLinearGradient(0, 0, W, 0);
+  gg.addColorStop(0, '#2f6b35'); gg.addColorStop(0.5, '#4f9a4a'); gg.addColorStop(1, '#2a5c30');
+  g.fillStyle = gg;
+  rr(g, W / 2 - 22, 20, 44, H - 20, 22); g.fill();
+  rr(g, 14, 110, 30, 100, 15); g.fill(); rr(g, 14, 190, 60, 24, 12); g.fill();
+  rr(g, W - 44, 70, 30, 90, 15); g.fill(); rr(g, W - 74, 140, 60, 24, 12); g.fill();
+  return c;
+}
+
+function rock(r){
+  const W = 260, H = 150, c = mk(W, H), g = c.getContext('2d');
+  const gg = g.createLinearGradient(0, 0, 0, H);
+  gg.addColorStop(0, '#b9a58a'); gg.addColorStop(1, '#6f5f4c');
+  g.fillStyle = gg;
+  g.beginPath(); g.moveTo(10, H);
+  const n = 9;
+  for (let i = 0; i <= n; i++){
+    const x = 10 + (W - 20) * i / n, y = H * (0.2 + 0.5 * Math.pow(Math.abs(i / n - 0.5) * 2, 1.6)) + (r() - 0.5) * 18;
+    g.lineTo(x, y);
+  }
+  g.lineTo(W - 10, H); g.closePath(); g.fill();
+  g.strokeStyle = 'rgba(0,0,0,0.18)'; g.lineWidth = 3;
+  g.beginPath(); g.moveTo(W * 0.35, H * 0.3); g.lineTo(W * 0.45, H * 0.8); g.stroke();
+  return c;
+}
+
+// 街灯（道のほうへ腕が出ている。光は lampGlow で描く）
+function lamp(){
+  const W = 200, H = 520, c = mk(W, H), g = c.getContext('2d');
+  g.fillStyle = '#4c5563';
+  g.fillRect(W - 40, 40, 14, H - 40);
+  g.fillRect(40, 40, W - 66, 10);
+  rr(g, 24, 36, 60, 22, 8); g.fillStyle = '#2b313b'; g.fill();
+  lampGlow(g, W, H);
+  return c;
+}
+function lampGlow(g, W, H){
+  const gg = g.createRadialGradient(54, 62, 2, 54, 62, 40);
+  gg.addColorStop(0, 'rgba(255,250,220,1)'); gg.addColorStop(0.35, 'rgba(255,226,150,0.8)'); gg.addColorStop(1, 'rgba(255,200,120,0)');
+  g.fillStyle = gg; g.fillRect(10, 22, 90, 80);
 }
 
 function billboard(s){

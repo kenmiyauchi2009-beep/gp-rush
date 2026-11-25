@@ -12,20 +12,30 @@ const TOUCH = HALF * 2 * 0.9;                  // 横にこれより近いと当
 
 const mod = (a, n) => ((a % n) + n) % n;
 
-// opts = { diff（難易度の base）, laps（周回数。練習は Infinity）, practice, arts（チーム id → 車の絵）, playerArt }
+// ライバルのうまさと最高速（難易度＋チームの速さ＋ドライバーの腕）
+export const aiSkill = (d, team, diff) => diff + (team.perf - 0.5) * 0.08 + (d.talent - 0.5) * 0.05;
+export const aiMax = team => CAR.max * (0.975 + team.perf * 0.025);
+
+// opts = { diff（難易度の base）, laps（周回数。練習は Infinity）, practice, arts（チーム id → 車の絵）, playerArt,
+//          grid（ドライバー id の並び。省略すると速い順で、自分は PLAYER_GRID 番手） }
 export function createRace(track, opts){
   const L = track.length, line = track.startSeg * SEG;
   const entries = opts.practice ? DRIVERS.filter(d => d.player) : DRIVERS.slice();
-  // 速い順にグリッドに並べ、自分は決まった位置に入れる
-  const ai = entries.filter(d => !d.player)
-    .sort((a, b) => (teamOf(b.team).perf + b.talent * 0.6) - (teamOf(a.team).perf + a.talent * 0.6));
-  const grid = ai.slice();
-  const me = entries.find(d => d.player);
-  grid.splice(opts.practice ? 0 : Math.min(PLAYER_GRID - 1, grid.length), 0, me);
+  let grid;
+  if (opts.grid && !opts.practice){
+    grid = opts.grid.map(id => entries.find(d => d.id === id)).filter(Boolean);
+  } else {
+    // 速い順にグリッドに並べ、自分は決まった位置に入れる
+    const ai = entries.filter(d => !d.player)
+      .sort((a, b) => (teamOf(b.team).perf + b.talent * 0.6) - (teamOf(a.team).perf + a.talent * 0.6));
+    grid = ai.slice();
+    const me = entries.find(d => d.player);
+    grid.splice(opts.practice ? 0 : Math.min(PLAYER_GRID - 1, grid.length), 0, me);
+  }
 
   const cars = grid.map((d, g) => {
     const team = teamOf(d.team);
-    const front = mod(line - (opts.practice ? 30 : 12 + g * 4) * SEG, L);
+    const front = mod(line - (opts.practice ? (opts.runup || 30) : 12 + g * 4) * SEG, L);
     const off = d.player ? PLAYER_Z : 0;
     const c = newCar(mod(front - off, L), off);
     c.x = opts.practice ? 0 : (g % 2 ? 0.45 : -0.45);
@@ -33,8 +43,8 @@ export function createRace(track, opts){
     c.grid = g + 1;
     c.art = d.player ? opts.playerArt : opts.arts[team.id];
     // うまさ：難易度＋チームの速さ＋ドライバーの腕。少しだけ最高速にも差をつける
-    c.skill = d.player ? 1 : opts.diff + (team.perf - 0.5) * 0.08 + (d.talent - 0.5) * 0.05;
-    c.max = d.player ? CAR.max : CAR.max * (0.975 + team.perf * 0.025);
+    c.skill = d.player ? 1 : aiSkill(d, team, opts.diff);
+    c.max = d.player ? CAR.max : aiMax(team);
     c.react = d.player ? 0 : 0.12 + Math.random() * 0.35;   // スタートの反応
     c.lapsDone = -1;          // スタートラインの手前にいるので -1。最初にラインを越えると 0
     c.lapStart = 0;
