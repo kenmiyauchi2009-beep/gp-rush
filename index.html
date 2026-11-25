@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="GPラッシュ">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0b1220">
+<title>GPラッシュ</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="stage">
+  <canvas id="cv" aria-label="レースの画面。左半分を押すと左、右半分を押すと右に曲がる。両方でブレーキ"></canvas>
+
+  <!-- 押している側の印 -->
+  <div class="pad left" id="padL" aria-hidden="true"></div>
+  <div class="pad right" id="padR" aria-hidden="true"></div>
+
+  <!-- レース中の表示 -->
+  <div id="hud" class="hidden">
+    <button class="icob" id="pauseBtn" aria-label="一時停止">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
+    </button>
+    <div class="laps">
+      <div class="lapno"><small>LAP</small><b id="hLap">1</b></div>
+      <div class="times">
+        <div class="now" id="hTime">0:00.000</div>
+        <div class="sub"><span>ベスト</span><b id="hBest">-:--.---</b></div>
+        <div class="sub"><span>前の周</span><b id="hLast">-:--.---</b></div>
+      </div>
+    </div>
+    <canvas id="map" aria-hidden="true"></canvas>
+    <div class="speedo">
+      <div class="leds" id="hLeds"></div>
+      <div class="row">
+        <div class="gear"><small>GEAR</small><b id="hGear">N</b></div>
+        <div class="spd"><b id="hSpd">0</b><small>km/h</small></div>
+      </div>
+    </div>
+    <div class="delta" id="hDelta"></div>
+    <div class="hint" id="hHint">左右を押して曲がる・両方でブレーキ</div>
+  </div>
+
+  <!-- タイトル -->
+  <div id="title">
+    <div class="tlogo"><h1>GP<span>ラッシュ</span></h1><p>タップで走る、架空のグランプリ</p></div>
+    <div class="tmenu">
+      <button class="primary" id="practiceBtn">練習走行<small id="practiceSub"></small></button>
+    </div>
+    <div class="tver" id="titleVer"></div>
+  </div>
+
+  <!-- 一時停止 -->
+  <div id="pause" class="hidden">
+    <div class="sheet">
+      <h2>一時停止</h2>
+      <button class="primary" id="resumeBtn">続ける</button>
+      <button id="restartBtn">最初から走る</button>
+      <button id="soundBtn" aria-pressed="true">音：ON</button>
+      <button id="quitBtn">タイトルへ</button>
+      <p class="offl" id="offlStatus"></p>
+    </div>
+  </div>
+
+  <div id="toast" role="status"></div>
+</div>
+
+<!-- 縦持ちのとき -->
+<div id="rotate">
+  <svg viewBox="0 0 64 64" aria-hidden="true"><rect x="20" y="8" width="24" height="44" rx="4" fill="none" stroke="currentColor" stroke-width="3"/><path d="M50 40a18 18 0 0 1-14 14" fill="none" stroke="currentColor" stroke-width="3"/><path d="M36 50l0 5 5 0" fill="none" stroke="currentColor" stroke-width="3"/></svg>
+  <p>iPhone を横向きにしてください</p>
+</div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
