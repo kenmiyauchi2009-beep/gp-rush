@@ -29,7 +29,8 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
     </button>
     <div class="laps">
-      <div class="lapno"><small>LAP</small><b id="hLap">1</b></div>
+      <div class="posno" id="hPosBox"><small>POS</small><b id="hPos">-</b><small id="hPosOf"></small></div>
+      <div class="lapno"><small>LAP</small><b id="hLap">1</b><small id="hLapOf"></small></div>
       <div class="times">
         <div class="now" id="hTime">0:00.000</div>
         <div class="sub"><span>ベスト</span><b id="hBest">-:--.---</b></div>
@@ -44,7 +45,9 @@
         <div class="spd"><b id="hSpd">0</b><small>km/h</small></div>
       </div>
     </div>
+    <div class="gaps" id="hGaps"><span>前 <b id="hAhead">-</b></span><span>後 <b id="hBehind">-</b></span></div>
     <div class="delta" id="hDelta"></div>
+    <div class="banner hidden" id="banner"></div>
     <div class="hint" id="hHint">左右を押して曲がる・両方でブレーキ</div>
   </div>
 
@@ -52,8 +55,10 @@
   <div id="title">
     <div class="tlogo"><h1>GP<span>ラッシュ</span></h1><p>タップで走る、架空のグランプリ</p></div>
     <div class="tmenu">
-      <button class="primary" id="practiceBtn">練習走行<small id="practiceSub"></small></button>
+      <button class="primary" id="raceBtn">レース<small id="raceSub"></small></button>
+      <button id="practiceBtn">練習走行<small id="practiceSub"></small></button>
     </div>
+    <div class="diff" id="diffSel" role="radiogroup" aria-label="ライバルの強さ"></div>
     <div class="tver" id="titleVer"></div>
   </div>
 
@@ -62,10 +67,23 @@
     <div class="sheet">
       <h2>一時停止</h2>
       <button class="primary" id="resumeBtn">続ける</button>
-      <button id="restartBtn">最初から走る</button>
+      <button id="restartBtn">最初からやり直す</button>
       <button id="soundBtn" aria-pressed="true">音：ON</button>
       <button id="quitBtn">タイトルへ</button>
       <p class="offl" id="offlStatus"></p>
+    </div>
+  </div>
+
+  <!-- レース結果 -->
+  <div id="results" class="hidden">
+    <div class="sheet wide">
+      <h2 id="rTitle">レース結果</h2>
+      <p class="rsum" id="rSummary"></p>
+      <div class="rtable" id="rTable"></div>
+      <div class="rbtns">
+        <button class="primary" id="againBtn">もう一度</button>
+        <button id="toTitleBtn">タイトルへ</button>
+      </div>
     </div>
   </div>
 

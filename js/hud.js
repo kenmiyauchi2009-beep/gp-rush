@@ -32,8 +32,8 @@ function prepareMap(track){
 
 export function resizeHud(){ mapTrack = null; }
 
-// 地図：コースと自分の位置
-export function drawMap(track, z){
+// 地図：コースと自分の位置（others：ライバルの位置の配列）
+export function drawMap(track, z, others){
   if (!mapCv.clientWidth) return;
   if (mapTrack !== track) prepareMap(track);
   const g = mapG, dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -45,15 +45,36 @@ export function drawMap(track, z){
   const s = track.map.pts[track.startSeg];
   g.fillStyle = '#ffd23f';
   g.fillRect(mapOx + s[0] * mapScale - 2 * dpr, mapOy + s[1] * mapScale - 2 * dpr, 4 * dpr, 4 * dpr);
+  // ライバル
+  if (others){
+    for (const o of others){
+      const q = track.map.pts[Math.floor(o.z / SEG) % track.N];
+      g.fillStyle = o.color;
+      g.beginPath(); g.arc(mapOx + q[0] * mapScale, mapOy + q[1] * mapScale, 2.6 * dpr, 0, Math.PI * 2); g.fill();
+    }
+  }
   // 自分
   const p = track.map.pts[Math.floor(z / SEG) % track.N];
   g.fillStyle = '#ff3b3b'; g.strokeStyle = '#fff'; g.lineWidth = 1.5 * dpr;
   g.beginPath(); g.arc(mapOx + p[0] * mapScale, mapOy + p[1] * mapScale, 4 * dpr, 0, Math.PI * 2); g.fill(); g.stroke();
 }
 
-// s = { lap, time, best, last, kmh, gear, rpm }
+// s = { lap, lapOf, pos, posOf, ahead, behind, time, best, last, kmh, gear, rpm }
 export function updateHud(s){
   set('hLap', String(s.lap));
+  set('hLapOf', s.lapOf ? '/' + s.lapOf : '');
+  const race = s.pos != null;
+  if (last.race !== race){
+    last.race = race;
+    $('hPosBox').classList.toggle('hidden', !race);
+    $('hGaps').classList.toggle('hidden', !race);
+  }
+  if (race){
+    set('hPos', String(s.pos));
+    set('hPosOf', '/' + s.posOf);
+    set('hAhead', s.ahead == null ? '-' : '+' + s.ahead.toFixed(1));
+    set('hBehind', s.behind == null ? '-' : '-' + s.behind.toFixed(1));
+  }
   set('hTime', fmtTime(s.time));
   set('hBest', fmtTime(s.best));
   set('hLast', fmtTime(s.last));
@@ -67,6 +88,18 @@ export function updateHud(s){
     for (let i = 0; i < LEDS; i++) els[i].className = i < lit ? (i < 5 ? 'g' : i < 10 ? 'r' : 'b') : '';
   }
 }
+
+let bannerTimer = 0;
+export function showBanner(html, ms = 2500){
+  const el = $('banner');
+  el.innerHTML = html;
+  el.classList.remove('hidden');
+  // アニメーションをやり直す
+  el.style.animation = 'none'; void el.offsetWidth; el.style.animation = '';
+  clearTimeout(bannerTimer);
+  if (ms) bannerTimer = setTimeout(() => el.classList.add('hidden'), ms);
+}
+export function hideBanner(){ clearTimeout(bannerTimer); $('banner').classList.add('hidden'); }
 
 let deltaTimer = 0;
 export function showDelta(d, isBest){

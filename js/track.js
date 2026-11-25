@@ -7,6 +7,8 @@ export const ROAD_W = 2000;      // 道の半分の幅（ワールド単位）�
 export const RUMBLE = 3;         // 縁石の赤白が切り替わる間隔（セグメント数）
 export const KERB = 1.12;        // 縁石の外側（道の半幅に対する倍率）
 export const GRAVEL = 2.1;       // グラベルの外側
+// 観客席（道に沿って立つ）：a＝手前の壁の位置、b＝いちばん奥の段、h＝奥の段の高さ、roof＝屋根の高さ
+export const STAND = { a: 1.6, b: 3.1, h: 2300, roof: 3100, rows: 7, wall: 260 };
 
 // 区間：[入り, 一定, 抜け, 曲がり（＋右／−左）, 抜けたあとの高さ]
 // 入り・抜けは曲がりが徐々に変わる長さ。高さは SEG を1とした単位で、区間全体でなめらかに変わる。
@@ -65,6 +67,7 @@ export function buildTrack(def){
       dark: Math.floor(n / RUMBLE) % 2,
       gravel: 0,      // -1：左にグラベル、+1：右、0：なし
       special: '',    // 'start'：スタートライン
+      stands: null,   // 観客席のある側（[-1, 1] など）
       clip: 0,
     };
     segs.push(seg);
@@ -128,11 +131,10 @@ function placeScenery(track){
   const r = rng(def.seed);
   const put = (i, name, offset, extra) => segs[((i % N) + N) % N].sprites.push(Object.assign({ name, offset }, extra));
 
-  // スタートのやぐら（信号）と観客席
+  // スタートのやぐら（信号）と、ストレートの両側の観客席
   put(track.startSeg, 'gantry', 0, { center: true });
-  for (let i = track.startSeg - 30; i < track.startSeg + 110; i += 8){
-    put(i, 'grandstand', -1.75);
-    put(i + 4, 'grandstand', 1.75);
+  for (let i = track.startSeg - 34; i < track.startSeg + 112; i++){
+    segs[((i % N) + N) % N].stands = [-1, 1];
   }
   // ピットの建物の代わりに、ストレートの右側に看板を並べる
   for (let i = track.startSeg + 120; i < track.startSeg + 150; i += 10) put(i, 'billboard', 1.45, { variant: (i / 10) | 0 });
@@ -151,7 +153,7 @@ function placeScenery(track){
   }
 
   // マーシャルポスト
-  for (let i = 60; i < N; i += 260) put(i, 'marshal', (i / 260) % 2 ? 1.5 : -1.5);
+  for (let i = 160; i < N - 60; i += 260) put(i, 'marshal', (i / 260) % 2 ? 1.5 : -1.5);
 
   // 看板（スタンドの区間は除く）
   let v = 0;

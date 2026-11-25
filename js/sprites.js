@@ -23,7 +23,6 @@ export function makeSprites(){
   SPRITES.tree = { cv: tree(r), ww: 1100, collide: true };
   SPRITES.pine = { cv: pine(r), ww: 760, collide: true };
   SPRITES.bush = { cv: bush(r), ww: 900, collide: false };
-  SPRITES.grandstand = { cv: grandstand(r), ww: 3400, collide: true };
   SPRITES.tirewall = { cv: tirewall(), ww: 1500, collide: true };
   SPRITES.marshal = { cv: marshal(), ww: 900, collide: true };
   SPRITES.gantry = { cv: gantry(), ww: ROAD_W * 2.5, collide: false, center: true, lights: true };
@@ -81,35 +80,6 @@ function bush(r){
     gg.addColorStop(0, '#79c255'); gg.addColorStop(1, '#2f7426');
     g.fillStyle = gg; g.beginPath(); g.arc(x, y, rad, 0, Math.PI * 2); g.fill();
   }
-  return c;
-}
-
-function grandstand(r){
-  const W = 640, H = 330, c = mk(W, H), g = c.getContext('2d');
-  // 屋根
-  g.fillStyle = '#dfe4ea'; g.beginPath(); g.moveTo(10, 40); g.lineTo(W - 10, 40); g.lineTo(W - 30, 70); g.lineTo(30, 70); g.closePath(); g.fill();
-  g.fillStyle = '#9aa5b1'; g.fillRect(30, 70, W - 60, 6);
-  // 柱
-  g.fillStyle = '#7d8793';
-  for (let x = 40; x < W - 30; x += 140) g.fillRect(x, 70, 10, H - 70);
-  // 客席の段と観客
-  const rows = 9, top = 82, bot = H - 70;
-  for (let i = 0; i < rows; i++){
-    const y = top + (bot - top) * i / rows, h = (bot - top) / rows;
-    g.fillStyle = i % 2 ? '#3b4656' : '#465365'; g.fillRect(30, y, W - 60, h);
-    for (let x = 36; x < W - 36; x += 9){
-      if (r() < 0.82){
-        g.fillStyle = `hsl(${Math.floor(r() * 360)},${50 + r() * 40}%,${45 + r() * 30}%)`;
-        g.fillRect(x, y + h * 0.25, 6, h * 0.55);
-        g.fillStyle = '#e9c7a8'; g.fillRect(x + 1, y + h * 0.05, 4, h * 0.28);
-      }
-    }
-  }
-  // 手前の壁と広告
-  g.fillStyle = '#e6e9ee'; g.fillRect(20, H - 70, W - 40, 70);
-  g.fillStyle = '#c8102e'; g.fillRect(20, H - 44, W - 40, 22);
-  g.fillStyle = '#ffffff'; g.font = 'bold 18px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.fillText('GP RUSH  ·  GREEN VALLEY  ·  GP RUSH', W / 2, H - 33);
   return c;
 }
 

@@ -8,20 +8,23 @@ const mk = (w, h) => { const c = document.createElement('canvas'); c.width = w; 
 const rr = (g, x, y, w, h, r) => { g.beginPath(); g.roundRect ? g.roundRect(x, y, w, h, r) : g.rect(x, y, w, h); };
 
 // livery = { body, accent, helmet, number }
-export function makeCar(livery){
+// ライバル車は小さめの絵を3枚にしてメモリを抑える（small: true）
+export function makeCar(livery, small = false){
   const frames = [];
-  for (const steer of [-1, -0.5, 0, 0.5, 1]){
-    const c = mk(CW, CH);
-    drawCar(c.getContext('2d'), CW, CH, steer, livery);
+  const w = small ? 300 : CW, h = Math.round(w * CH / CW);
+  for (const steer of small ? [-1, 0, 1] : [-1, -0.5, 0, 0.5, 1]){
+    const c = mk(w, h);
+    drawCar(c.getContext('2d'), w, h, steer, livery);
     frames.push(c);
   }
-  return { frames, aspect: CH / CW };
+  return { frames, aspect: h / w };
 }
 
 // steer：-1（左いっぱい）〜 1（右いっぱい）
 export function carFrame(car, steer){
-  const i = Math.round((steer + 1) * 2);
-  return car.frames[Math.max(0, Math.min(4, i))];
+  const n = car.frames.length - 1;
+  const i = Math.round((steer + 1) / 2 * n);
+  return car.frames[Math.max(0, Math.min(n, i))];
 }
 
 function shade(hex, k){

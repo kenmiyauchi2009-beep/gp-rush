@@ -2,7 +2,7 @@
 // ゲームのファイルを更新したら VERSION を上げる（js/main.js の APP_VERSION も同じにする）。
 // → 次にアプリを開いたとき裏で新しい版を取得し、その次の起動から新しい版に切り替わる。
 // ファイルを増やしたら ASSETS にも足す（1つでも取得できないとインストールが失敗する）。
-const VERSION = '0.1.0';
+const VERSION = '0.2.0';
 const CACHE = 'gprush-' + VERSION;
 const ASSETS = [
   './',
@@ -21,6 +21,8 @@ const ASSETS = [
   'js/input.js',
   'js/hud.js',
   'js/audio.js',
+  'js/data.js',
+  'js/race.js',
   'icons/icon-180.png',
   'icons/icon-192.png',
   'icons/icon-512.png',

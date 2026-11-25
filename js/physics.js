@@ -1,5 +1,5 @@
 // 車の動き（自分の車も、タイトル画面で走る車も同じ計算）
-import { SEG, ROAD_W, KERB, GRAVEL } from './track.js';
+import { SEG, ROAD_W, KERB, GRAVEL, STAND } from './track.js';
 import { spriteOf } from './sprites.js';
 import { CAR_W } from './carart.js';
 import { PLAYER_Z } from './render.js';
@@ -31,14 +31,19 @@ export function gearOf(pct){
   }
 }
 
-export function newCar(z){
-  return { z, x: 0, speed: 0, steer: 0, braking: 0, surface: 'road', crash: 0, hit: false };
+// z：車の位置。off：z から車の先頭までの距離（自分の車は z がカメラの位置なので PLAYER_Z、ライバルは 0）
+export function newCar(z, off = PLAYER_Z){
+  return { z, off, x: 0, speed: 0, steer: 0, braking: 0, surface: 'road', crash: 0, hit: false, tow: 0, max: CAR.max };
 }
+
+// コース上の位置（車の先頭）
+export const posOf = (c, track) => (c.z + c.off) % track.length;
 
 // ctl = { steer: -1〜1, brake: true/false, throttle: true/false }
 export function updateCar(c, track, ctl, dt){
-  const max = c.max || CAR.max;
-  const seg = track.at(c.z + PLAYER_Z);
+  // スリップストリーム（前の車の真後ろ）で最高速が少し上がる
+  const max = (c.max || CAR.max) * (1 + 0.05 * (c.tow || 0));
+  const seg = track.at(c.z + c.off);
   const pct = c.speed / max;
 
   // ハンドル（押した・離したをなめらかに）
@@ -74,6 +79,12 @@ export function updateCar(c, track, ctl, dt){
   c.crash = Math.max(0, c.crash - dt);
   if (ax > 1){
     const half = CAR_W / ROAD_W * 0.4;
+    // 観客席の手前の壁
+    if (seg.stands && seg.stands.includes(side) && ax + half > STAND.a){
+      if (c.crash <= 0){ c.speed = Math.min(c.speed, max * 0.3); c.hit = true; }
+      c.crash = 0.5;
+      c.x = side * (STAND.a - half - 0.02);
+    }
     for (const sp of seg.sprites){
       const s = spriteOf(sp);
       if (!s || !s.collide) continue;
@@ -94,28 +105,50 @@ export function updateCar(c, track, ctl, dt){
   if (c.z < 0) c.z += track.length;
 }
 
-// 自動で走らせる（タイトル画面。あとでライバル車にも使う）
+// 自動で走らせる（タイトル画面の車とライバル車）
 // カーブ c を曲がりきれる速さ（最高速に対する割合）。grip は道幅を使って曲がる分も含めた値（シミュレーションで決めた）
 export const cornerLimit = (curve, grip = 1.42) =>
   Math.abs(curve) < 0.05 ? 1 : Math.min(1, (CAR.steer * grip) / (CAR.cf * Math.abs(curve)));
 
-export function autopilot(c, track, skill = 0.95){
+// コースの各セグメントで「その先を見て出してよい速さ」と「走る線」を、うまさごとに前もって計算しておく
+const planCache = new Map();
+function planFor(track, skill){
+  const key = track.def.id + ':' + skill.toFixed(3);
+  let p = planCache.get(key);
+  if (p) return p;
+  const N = track.N, segs = track.segs;
+  const lim = new Float32Array(N), line = new Float32Array(N);
+  const dec = CAR.brake * 0.85;            // 最高速に対する割合で計算する
+  for (let i = 0; i < N; i++) lim[i] = cornerLimit(segs[i].curve) * skill;
+  // 後ろから前へ：v² ≤ (次のセグメントの v)² + 2・減速・距離 を2周まわして行き渡らせる
+  const k = 2 * dec * SEG / CAR.max;        // 1セグメント分（割合の2乗の単位）
+  for (let pass = 0; pass < 2; pass++){
+    for (let i = N - 1; i >= 0; i--){
+      const nx = lim[(i + 1) % N];
+      const v = Math.sqrt(nx * nx + k);
+      if (v < lim[i]) lim[i] = v;
+    }
+  }
+  for (let i = 0; i < N; i++){
+    let near = 0;
+    for (let j = 1; j <= 24; j++) near += segs[(i + j) % N].curve;
+    line[i] = clamp((near / 24) * 0.16, -0.6, 0.6);
+  }
+  p = { lim, line };
+  planCache.set(key, p);
+  return p;
+}
+
+// targetX を渡すと、走る線の代わりにそこへ寄せる（追い越し・よけるとき）
+export function autopilot(c, track, skill = 0.95, targetX = null){
   const max = c.max || CAR.max;
-  const pz = c.z + PLAYER_Z;
+  const pz = c.z + c.off;
   const pct = c.speed / max;
   const seg = track.at(pz);
-  // 先のカーブまでにブレーキで落とせる速さのうち、いちばん低いもの
-  const dec = CAR.brake * max * 0.85;
-  let allow = cornerLimit(seg.curve) * skill * max, near = 0;
-  for (let i = 1; i <= 120; i++){
-    const s = track.at(pz + i * SEG);
-    const vc = cornerLimit(s.curve) * skill * max;
-    const v = Math.sqrt(vc * vc + 2 * dec * i * SEG);
-    if (v < allow) allow = v;
-    if (i <= 24) near += s.curve;
-  }
+  const plan = planFor(track, skill);
+  const allow = plan.lim[seg.index] * max * (1 + 0.05 * (c.tow || 0));
   // 曲がりの内側に寄せる
-  const target = clamp((near / 24) * 0.16, -0.6, 0.6);
+  const target = targetX == null ? plan.line[seg.index] : targetX;
   const hold = pct * seg.curve * CAR.cf / CAR.steer;
   const steer = clamp(hold + (target - c.x) * 1.8, -1, 1);
   return { steer, brake: c.speed > allow * 1.02, throttle: c.speed < allow };

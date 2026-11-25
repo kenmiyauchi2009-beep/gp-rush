@@ -1,6 +1,6 @@
 // 擬似3Dの描画
 // 道を手前から奥へ輪切り（セグメント）で描き、景色と車は奥から手前へ重ねる。
-import { SEG, ROAD_W, KERB, GRAVEL } from './track.js';
+import { SEG, ROAD_W, KERB, GRAVEL, STAND } from './track.js';
 import { spriteOf, GANTRY_LIGHTS } from './sprites.js';
 import { CAR_W, carFrame, drawBrakeGlow } from './carart.js';
 
@@ -223,6 +223,91 @@ function drawLights(r, n){
   }
 }
 
+// ---- 観客席（道に沿って立つ。セグメントごとに斜めの客席・屋根を描く） ----
+const CROWD = ['#e8433a', '#f2c230', '#2f7de1', '#f4f4f4', '#3cb371', '#ff8c2a', '#9b59d0', '#1e2a44',
+  '#e86fa6', '#58c8e8', '#c9302c', '#ffd9a8', '#2c3e50', '#7fd16a', '#ffffff', '#f06b2b'];
+const SKIN = ['#f1c9a5', '#d9a37a', '#8d5a3b', '#f6dcc4', '#c68a5e'];
+const crowdAt = (i, r, k) => CROWD[(((i * 73856093) ^ (r * 19349663) ^ (k * 83492791)) >>> 0) % CROWD.length];
+
+function quad(a, b, c, d, color){ poly(a[0], a[1], b[0], b[1], c[0], c[1], d[0], d[1], color); }
+const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+
+function drawStand(seg, side){
+  const f = seg.fog, p1 = seg.p1.screen, p2 = seg.p2.screen;
+  const { a, b, h, roof, rows, wall } = STAND;
+  // 道からの横の位置 o（道の半幅が1）と高さ hh の点を画面へ
+  const P = (p, o, hh) => [p.x + p.scale * o * side * ROAD_W * V.K, p.y - p.scale * hh * V.K];
+  const fine = seg.n < 70;     // 近いところは席を細かく分ける
+
+  // 奥の壁（客席の上から屋根まで）
+  quad(P(p1, b, h), P(p2, b, h), P(p2, b, roof + 250), P(p1, b, roof + 250), fogC('#56606e', f));
+  // 客席（奥の段から手前へ。手前の段が奥の人の足もとを隠す）
+  for (let r = rows - 1; r >= 0; r--){
+    const o0 = a + (b - a) * r / rows, o1 = a + (b - a) * (r + 1) / rows;
+    const h0 = wall + (h - wall) * r / rows, h1 = wall + (h - wall) * (r + 1) / rows;
+    const q1 = P(p1, o0, h0), q2 = P(p2, o0, h0), q3 = P(p2, o1, h1), q4 = P(p1, o1, h1);
+    quad(q1, q2, q3, q4, fogC(r % 2 ? '#3b4656' : '#465365', f));
+    // 観客：遠くは色のかたまり、近くは1人ずつ道のほうを向いて立つ（服の色の体と、肌の色の頭）
+    if (!fine){
+      const lo1 = mix(q1, q4, 0.3), lo2 = mix(q2, q3, 0.3);
+      quad(mix(lo1, lo2, 0.05), mix(lo1, lo2, 0.95), mix(q4, q3, 0.95), mix(q4, q3, 0.05), fogC(crowdAt(seg.index, r, 0), f));
+    } else {
+      const parts = 3, o = o0 + (o1 - o0) * 0.4, hb = h0 + (h1 - h0) * 0.4;
+      // セグメントの中の位置 t（0〜1）と高さ hh の点
+      const at = (t, hh) => mix(P(p1, o, hh), P(p2, o, hh), t);
+      for (let k = 0; k < parts; k++){
+        if (((seg.index * 7 + r * 3 + k) % 11) === 0) continue;   // ところどころ空席
+        const t0 = (k + 0.18) / parts, t1 = (k + 0.82) / parts, tm = (k + 0.5) / parts, hw = 0.16 / parts;
+        quad(at(t0, hb), at(t1, hb), at(t1, hb + 250), at(t0, hb + 250), fogC(crowdAt(seg.index, r, k), f));
+        quad(at(tm - hw, hb + 260), at(tm + hw, hb + 260), at(tm + hw, hb + 370), at(tm - hw, hb + 370), fogC(SKIN[(seg.index + r + k) % SKIN.length], f));
+      }
+    }
+  }
+  // 手前の壁（広告の帯つき）
+  quad(P(p1, a, 0), P(p2, a, 0), P(p2, a, wall), P(p1, a, wall), fogC('#e6e9ee', f));
+  quad(P(p1, a, wall * 0.25), P(p2, a, wall * 0.25), P(p2, a, wall * 0.7), P(p1, a, wall * 0.7), fogC(seg.index % 12 < 6 ? '#c8102e' : '#1b4fbf', f));
+  // 柱
+  if (seg.index % 8 === 0){
+    const t = P(p1, a + 0.12, roof), bt = P(p1, a + 0.12, wall);
+    const w = Math.max(1, p1.scale * 90 * V.K);
+    V.g.fillStyle = fogC('#7d8793', f);
+    V.g.fillRect(t[0] - w / 2, t[1], w, bt[1] - t[1]);
+  }
+  // 屋根（裏側と、手前の縁）
+  quad(P(p1, a - 0.05, roof), P(p2, a - 0.05, roof), P(p2, b + 0.2, roof + 250), P(p1, b + 0.2, roof + 250), fogC('#8e98a5', f));
+  quad(P(p1, a - 0.05, roof), P(p2, a - 0.05, roof), P(p2, a - 0.05, roof + 200), P(p1, a - 0.05, roof + 200), fogC('#f2f4f7', f));
+}
+
+// ---- ライバル車 ----
+let carSegs = [];
+function placeCars(track, cars){
+  for (const s of carSegs) s.cars.length = 0;
+  carSegs = [];
+  if (!cars) return;
+  for (const c of cars){
+    const s = track.at(c.z + c.off);
+    if (!s.cars.length) carSegs.push(s);
+    s.cars.push(c);
+  }
+  for (const s of carSegs) if (s.cars.length > 1) s.cars.sort((a, b) => ((b.z + b.off) % SEG) - ((a.z + a.off) % SEG));
+}
+
+function drawCarAt(seg, c){
+  const g = V.g, p1 = seg.p1.screen, p2 = seg.p2.screen;
+  const t = (((c.z + c.off) % SEG) + SEG) % SEG / SEG;
+  const scale = p1.scale + (p2.scale - p1.scale) * t;
+  const x = p1.x + (p2.x - p1.x) * t + scale * c.x * ROAD_W * V.K;
+  const y = p1.y + (p2.y - p1.y) * t;
+  const fr = carFrame(c.art, c.steer);
+  const w = CAR_W * scale * V.K, h = w * fr.height / fr.width;
+  const dx = x - w / 2, dy = y - h;
+  if (dx > V.W || dx + w < 0 || w < 2) return;
+  const clipH = Math.max(0, dy + h - seg.clip);
+  if (clipH >= h) return;
+  g.drawImage(fr, 0, 0, fr.width, fr.height * (1 - clipH / h), dx, dy, w, h - clipH);
+  if (c.braking > 0.05 && clipH < h * 0.3) drawBrakeGlow(g, dx, dy, w, h, c.braking);
+}
+
 function drawPlayer(v){
   const g = V.g;
   const w = CAR_W / CAM.height * V.K;
@@ -234,7 +319,7 @@ function drawPlayer(v){
   if (v.brake > 0.05) drawBrakeGlow(g, x, y, w, h, v.brake);
 }
 
-// v = { track, z, x, steer, brake, car, skyOff, lights, shake, bounce }
+// v = { track, z, x, steer, brake, car, skyOff, lights, shake, bounce, cars（ライバル車の配列） }
 export function render(v){
   const { track } = v;
   const g = V.g, W = V.W, H = V.H;
@@ -272,10 +357,13 @@ export function render(v){
   }
 
   // 景色と車（奥から手前へ）
+  placeCars(track, v.cars);
+  const myT = ppct;
   for (let n = CAM.dist - 1; n > 0; n--){
     const seg = segs[(base.index + n) % N];
     const p = seg.p1.screen;
     if (seg.p1.camera.z > CAM.depth){
+      if (seg.stands && !seg.hidden) for (const side of seg.stands) drawStand(seg, side);
       const alpha = seg.n > CAM.dist * 0.7 ? Math.max(0, 1 - (seg.n - CAM.dist * 0.7) / (CAM.dist * 0.3)) : 1;
       for (const sp of seg.sprites){
         const s = spriteOf(sp);
@@ -286,7 +374,18 @@ export function render(v){
         if (s.lights) drawLights(r, v.lights || 0);
       }
     }
-    if (seg === ps) drawPlayer(v);
+    if (seg === ps){
+      // 同じセグメントでは、自分より前の車 → 自分 → 後ろの車の順
+      let drawn = false;
+      for (const c of seg.cars){
+        const t = (((c.z + c.off) % SEG) + SEG) % SEG / SEG;
+        if (!drawn && t < myT){ drawPlayer(v); drawn = true; }
+        if (seg.p1.camera.z > CAM.depth) drawCarAt(seg, c);
+      }
+      if (!drawn) drawPlayer(v);
+    } else if (seg.p1.camera.z > CAM.depth){
+      for (const c of seg.cars) drawCarAt(seg, c);
+    }
   }
   g.restore();
 }

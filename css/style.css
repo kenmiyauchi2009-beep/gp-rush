@@ -68,6 +68,46 @@ button{font:inherit;color:inherit}
   transition:opacity .6s}
 .hint.gone{opacity:0}
 
+.posno{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:40px;
+  border-right:1px solid var(--line);padding-right:10px}
+.posno small{font-size:10px;color:var(--muted);letter-spacing:.08em;line-height:1.2}
+.posno b{font-size:28px;line-height:1;font-style:italic;color:var(--accent2)}
+.lapno small + b + small, .lapno #hLapOf{font-size:10px;color:var(--muted)}
+.gaps{position:absolute;top:calc(var(--st) + 86px);left:calc(var(--sl) + 64px);display:flex;gap:10px;
+  font-size:12px;color:var(--muted);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:3px 10px}
+.gaps b{color:var(--ink);font-weight:700}
+.banner{position:absolute;left:50%;top:38%;transform:translate(-50%,-50%);text-align:center;
+  background:rgba(8,12,22,.78);border:1px solid var(--line);border-radius:16px;padding:10px 28px;animation:pop .35s ease-out}
+.banner b{display:block;font-size:34px;font-weight:900;font-style:italic;letter-spacing:.04em}
+.banner span{font-size:15px;color:var(--accent2);font-weight:700}
+@keyframes pop{from{transform:translate(-50%,-50%) scale(.7);opacity:0}to{transform:translate(-50%,-50%) scale(1);opacity:1}}
+
+/* ---- レース結果 ---- */
+#results{position:absolute;inset:0;background:rgba(3,6,12,.55);display:flex;align-items:center;justify-content:center;
+  padding:calc(var(--st) + 8px) calc(var(--sr) + 10px) calc(var(--sb) + 8px) calc(var(--sl) + 10px)}
+#results .sheet{background:#121a2b;border:1px solid var(--line);border-radius:18px;padding:12px 14px;
+  width:min(640px,100%);max-height:100%;height:auto;display:flex;flex-direction:column;gap:8px;min-height:0}
+#results h2{margin:0;font-size:17px;text-align:center}
+.rsum{margin:0;text-align:center;font-size:13px;color:var(--muted)}
+.rsum b{color:var(--accent2);font-size:16px}
+.rtable{overflow:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:10px;min-height:0;flex:1}
+.rrow{display:grid;grid-template-columns:30px 14px 1fr 86px 76px;gap:6px;align-items:center;padding:5px 8px;font-size:13px;
+  border-bottom:1px solid rgba(255,255,255,.06);font-variant-numeric:tabular-nums}
+.rrow:last-child{border-bottom:0}
+.rrow .p{font-weight:800;font-style:italic;text-align:right}
+.rrow .sw{width:10px;height:18px;border-radius:3px}
+.rrow .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rrow .nm small{color:var(--muted);margin-left:6px;font-size:11px}
+.rrow .t,.rrow .bl{text-align:right}
+.rrow .bl{color:var(--muted);font-size:12px}
+.rrow .bl.fl{color:#c77dff;font-weight:700}
+.rrow.me{background:rgba(255,59,59,.18)}
+.rrow.hd{font-size:11px;color:var(--muted);position:sticky;top:0;background:#121a2b}
+.rbtns{display:flex;gap:10px;justify-content:center}
+.rbtns button{pointer-events:auto;border:1px solid var(--line);border-radius:12px;background:rgba(14,20,34,.85);
+  padding:10px 22px;font-size:15px;font-weight:700;min-width:150px}
+.rbtns button.primary{background:var(--accent);border-color:transparent}
+
 /* ---- タイトル ---- */
 #title{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;
   background:linear-gradient(180deg,rgba(5,9,18,.55),rgba(5,9,18,.15) 45%,rgba(5,9,18,.7));padding:0 calc(var(--sr) + 16px) 0 calc(var(--sl) + 16px)}
@@ -83,6 +123,10 @@ button.primary,#pause button,.tmenu button{pointer-events:auto;border:1px solid 
 button.primary{background:var(--accent);border-color:transparent;color:#fff}
 button.primary small{font-size:12px;font-weight:500;opacity:.9}
 button:active{transform:scale(.97)}
+.diff{display:flex;gap:4px;background:rgba(14,20,34,.8);border:1px solid var(--line);border-radius:12px;padding:4px}
+.diff button{pointer-events:auto;border:0;background:transparent;border-radius:9px;padding:7px 14px;font-size:13px;color:var(--muted)}
+.diff button[aria-checked="true"]{background:#2a3550;color:var(--ink);font-weight:700}
+.diff small{align-self:center;font-size:11px;color:var(--muted);padding:0 6px}
 .tver{position:absolute;right:calc(var(--sr) + 12px);bottom:calc(var(--sb) + 8px);font-size:11px;color:rgba(255,255,255,.7)}
 
 /* ---- 一時停止 ---- */
@@ -114,4 +158,8 @@ button:active{transform:scale(.97)}
   .spd b{font-size:32px}
   .gear b{font-size:22px}
   .tlogo h1{font-size:52px}
+  #title{gap:14px}
+  .posno b{font-size:24px}
+  .gaps{top:calc(var(--st) + 74px)}
+  .rrow{padding:3px 8px;font-size:12px}
 }
