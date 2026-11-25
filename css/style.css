@@ -88,7 +88,7 @@ button{font:inherit;color:inherit}
 #results .sheet,#menu .sheet{background:#121a2b;border:1px solid var(--line);border-radius:18px;padding:12px 14px;
   width:min(640px,100%);max-height:100%;height:auto;display:flex;flex-direction:column;gap:8px;min-height:0}
 #results h2,#menu h2{margin:0;font-size:17px;text-align:center}
-.rsum{margin:0;text-align:center;font-size:13px;color:var(--muted)}
+.rsum{margin:0;text-align:center;font-size:13px;color:var(--muted);line-height:1.5}
 .rsum b{color:var(--accent2);font-size:16px}
 .rtable{overflow:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:10px;min-height:0;flex:1}
 .rrow{display:grid;grid-template-columns:30px 14px 1fr 86px 76px 40px;gap:6px;align-items:center;padding:5px 8px;font-size:13px;
@@ -136,6 +136,47 @@ button{font:inherit;color:inherit}
 .champ .cn{display:block;font-size:24px;font-style:italic;color:var(--accent2)}
 .champ .mnote b{color:var(--accent2)}
 
+/* ---- ガレージ ---- */
+#menu h2 .crv{color:var(--accent2);font-size:14px}
+#menu h2 .pow{color:#9fd3ff;font-size:14px}
+.mtabs em,.pd em{font-style:normal;font-size:10px;background:var(--accent);color:#fff;border-radius:6px;padding:0 5px;margin-left:4px}
+.mtabs.chips button{padding:3px 10px;font-size:12px}
+.gbody{display:flex;gap:10px;min-height:0;flex:1;overflow:hidden}
+.gstats{display:flex;flex-direction:column;gap:3px;min-width:180px;background:#18223a;border:1px solid var(--line);border-radius:12px;padding:8px 10px;overflow:auto}
+.gs{display:flex;justify-content:space-between;gap:10px;font-size:13px}
+.gs span{color:var(--muted)}
+.gs b.up,.pd b.up,.cmp b.up{color:var(--good)}
+.pd b.down,.cmp b.down{color:var(--bad)}
+.plist{display:flex;flex-direction:column;gap:5px;flex:1;min-width:0;overflow:auto}
+.pline{display:grid;grid-template-columns:6px 1fr auto;gap:8px;align-items:center;text-align:left;border:1px solid var(--line);
+  border-radius:10px;background:#18223a;padding:6px 10px 6px 0;flex:none}
+.pline i{align-self:stretch;background:var(--rc);border-radius:10px 0 0 10px}
+.pline .pn b{display:block;font-size:13px;color:var(--rc)}
+.pline .pn small{display:block;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pline .pd{display:flex;align-items:center;gap:4px;font-size:13px}
+.pline .pd small{font-size:11px;color:var(--muted)}
+.pline.eq{background:#1d2a46}
+.shop{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;flex:1}
+.box{border:1px solid var(--line);border-radius:12px;background:#18223a;padding:10px;display:flex;flex-direction:column;gap:6px;text-align:left}
+.box b{font-size:15px}
+.box small{font-size:11px;color:var(--muted);line-height:1.4}
+.box span{margin-top:auto;font-weight:800;color:var(--accent2)}
+.box:disabled{opacity:.45}
+#menu .gbody:has(.shop){flex-direction:column}
+.pcard{border:1px solid var(--rc);border-radius:14px;background:#18223a;padding:10px 14px;overflow:auto;min-height:0}
+.pcard .ph b{display:block;font-size:17px;color:var(--rc)}
+.pcard .ph small{font-size:12px;color:var(--muted)}
+.pcard ul{list-style:none;margin:8px 0 4px;padding:0;display:flex;flex-direction:column;gap:3px}
+.pcard li{display:flex;justify-content:space-between;font-size:13px}
+.pcard li span{color:var(--muted)}
+.pcard li.main{font-size:15px}
+.pcard li.main span{color:var(--ink)}
+.pcard li b{color:var(--good)}
+.cmp{margin:4px 0 0;font-size:12px;color:var(--muted)}
+.rbtns.wrap{flex-wrap:wrap}
+.rbtns button small{display:block;font-size:11px;font-weight:500;opacity:.85}
+.rbtns button:disabled{opacity:.45}
+
 /* ---- タイトル ---- */
 #title{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;
   background:linear-gradient(180deg,rgba(5,9,18,.55),rgba(5,9,18,.15) 45%,rgba(5,9,18,.7));padding:0 calc(var(--sr) + 16px) 0 calc(var(--sl) + 16px)}
@@ -144,9 +185,9 @@ button{font:inherit;color:inherit}
   text-shadow:0 4px 0 rgba(0,0,0,.35)}
 .tlogo h1 span{color:var(--accent)}
 .tlogo p{margin:8px 0 0;color:#dfe7f0;font-size:14px;text-shadow:0 1px 3px rgba(0,0,0,.6)}
-.tmenu{display:flex;gap:12px}
+.tmenu{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;max-width:760px}
 button.primary,#pause button,.tmenu button{pointer-events:auto;border:1px solid var(--line);border-radius:14px;
-  background:rgba(14,20,34,.85);padding:12px 18px;font-size:17px;font-weight:700;min-width:170px;
+  background:rgba(14,20,34,.85);padding:11px 14px;font-size:16px;font-weight:700;min-width:150px;
   display:flex;flex-direction:column;align-items:center;gap:2px}
 button.primary{background:var(--accent);border-color:transparent;color:#fff}
 button.primary small{font-size:12px;font-weight:500;opacity:.9}

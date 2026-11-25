@@ -39,28 +39,48 @@ export function newCar(z, off = PLAYER_Z){
 // コース上の位置（車の先頭）
 export const posOf = (c, track) => (c.z + c.off) % track.length;
 
+// パーツの性能（parts.js の totalStats）から、自分の車の調整値を作る
+export function tunedCar(st){
+  return {
+    max: CAR.max * (1 + st.top),
+    p: Object.assign({}, CAR, {
+      accel: CAR.accel * (1 + st.accel),
+      cf: CAR.cf * (1 - st.corner),
+      steer: CAR.steer * (1 + st.grip),
+      brake: CAR.brake * (1 + st.brake),
+      grassDecel: CAR.grassDecel * (1 - st.grass),
+      gravelDecel: CAR.gravelDecel * (1 - st.grass * 0.7),
+      towK: 1 + st.tow,
+      bumpRes: st.bump,
+    }),
+  };
+}
+
 // ctl = { steer: -1〜1, brake: true/false, throttle: true/false }
 export function updateCar(c, track, ctl, dt){
+  const P = c.p || CAR;
   // スリップストリーム（前の車の真後ろ）で最高速が少し上がる
-  const max = (c.max || CAR.max) * (1 + 0.05 * (c.tow || 0));
+  const max = (c.max || CAR.max) * (1 + 0.05 * (c.tow || 0) * (P.towK || 1));
   const seg = track.at(c.z + c.off);
   const pct = c.speed / max;
+  // 曲がるときの横の動きは、車ごとの最高速ではなく実際の速さで決まる
+  const ap = c.speed / CAR.max;
 
   // ハンドル（押した・離したをなめらかに）
-  c.steer += (ctl.steer - c.steer) * Math.min(1, dt * CAR.steerResp);
-  c.x += dt * pct * CAR.steer * c.steer;
+  c.steer += (ctl.steer - c.steer) * Math.min(1, dt * P.steerResp);
+  c.x += dt * ap * P.steer * c.steer;
   // カーブで外へ振られる（右カーブなら左へ）
-  c.x -= dt * pct * pct * seg.curve * CAR.cf;
+  c.x -= dt * ap * ap * seg.curve * P.cf;
 
   // アクセル・ブレーキ
   if (ctl.brake){
-    c.speed -= CAR.brake * max * dt;
+    c.speed -= P.brake * CAR.max * dt;
     c.braking = Math.min(1, c.braking + dt * 8);
   } else {
-    if (ctl.throttle !== false) c.speed += CAR.accel * max * (1 - pct * pct) * dt;
+    if (ctl.throttle !== false) c.speed += P.accel * max * (1 - pct * pct) * dt;
     c.braking = Math.max(0, c.braking - dt * 6);
   }
-  c.speed -= Math.abs(c.steer) * pct * CAR.scrub * max * dt;
+  c.speed -= Math.abs(c.steer) * ap * P.scrub * CAR.max * dt;
 
   // 路面：縁石・芝・グラベル
   const ax = Math.abs(c.x), side = Math.sign(c.x);
@@ -69,9 +89,9 @@ export function updateCar(c, track, ctl, dt){
   else if (ax > KERB){
     const gravel = seg.gravel === side && ax < GRAVEL + 0.4;
     c.surface = gravel ? 'gravel' : 'grass';
-    const lim = gravel ? CAR.gravelMax : CAR.grassMax;
-    const dec = gravel ? CAR.gravelDecel : CAR.grassDecel;
-    if (c.speed > lim * max) c.speed -= dec * max * dt;
+    const lim = gravel ? P.gravelMax : P.grassMax;
+    const dec = gravel ? P.gravelDecel : P.grassDecel;
+    if (c.speed > lim * CAR.max) c.speed -= dec * CAR.max * dt;
   }
 
   // 景色にぶつかる
@@ -107,19 +127,22 @@ export function updateCar(c, track, ctl, dt){
 
 // 自動で走らせる（タイトル画面の車とライバル車）
 // カーブ c を曲がりきれる速さ（最高速に対する割合）。grip は道幅を使って曲がる分も含めた値（シミュレーションで決めた）
-export const cornerLimit = (curve, grip = 1.42) =>
-  Math.abs(curve) < 0.05 ? 1 : Math.min(1, (CAR.steer * grip) / (CAR.cf * Math.abs(curve)));
+// P：車の調整値（パーツで曲がりやすくなった自分の車は CAR と違う）
+// 1 より大きい値（最高速でも曲がれる）もそのまま返す
+export const cornerLimit = (curve, grip = 1.42, P = CAR) =>
+  Math.abs(curve) < 0.05 ? 9 : (P.steer * grip) / (P.cf * Math.abs(curve));
 
 // コースの各セグメントで「その先を見て出してよい速さ」と「走る線」を、うまさごとに前もって計算しておく
 const planCache = new Map();
-function planFor(track, skill){
-  const key = track.def.id + ':' + skill.toFixed(3);
+function planFor(track, skill, P = CAR){
+  const key = `${track.def.id}:${skill.toFixed(3)}:${P.steer.toFixed(3)}:${P.cf.toFixed(3)}:${P.brake.toFixed(3)}`;
   let p = planCache.get(key);
   if (p) return p;
   const N = track.N, segs = track.segs;
   const lim = new Float32Array(N), line = new Float32Array(N);
-  const dec = CAR.brake * 0.85;            // 最高速に対する割合で計算する
-  for (let i = 0; i < N; i++) lim[i] = cornerLimit(segs[i].curve) * skill;
+  const dec = P.brake * 0.85;              // 最高速に対する割合で計算する
+  // うまさ（skill）はカーブの速さだけに効く。直線では最高速まで出す
+  for (let i = 0; i < N; i++) lim[i] = Math.min(1.2, cornerLimit(segs[i].curve, 1.42, P) * skill);
   // 後ろから前へ：v² ≤ (次のセグメントの v)² + 2・減速・距離 を2周まわして行き渡らせる
   const k = 2 * dec * SEG / CAR.max;        // 1セグメント分（割合の2乗の単位）
   for (let pass = 0; pass < 2; pass++){
@@ -145,11 +168,14 @@ export function autopilot(c, track, skill = 0.95, targetX = null){
   const pz = c.z + c.off;
   const pct = c.speed / max;
   const seg = track.at(pz);
-  const plan = planFor(track, skill);
-  const allow = plan.lim[seg.index] * max * (1 + 0.05 * (c.tow || 0));
+  const P = c.p || CAR;
+  const plan = planFor(track, skill, P);
+  // 曲がれる速さは実際の速さ（CAR.max を基準）で決まる。直線では車の最高速まで出す
+  const allow = Math.min(plan.lim[seg.index] * CAR.max, max) * (1 + 0.05 * (c.tow || 0));
   // 曲がりの内側に寄せる
   const target = targetX == null ? plan.line[seg.index] : targetX;
-  const hold = pct * seg.curve * CAR.cf / CAR.steer;
+  const ap = c.speed / CAR.max;
+  const hold = ap * seg.curve * P.cf / P.steer;
   const steer = clamp(hold + (target - c.x) * 1.8, -1, 1);
   return { steer, brake: c.speed > allow * 1.02, throttle: c.speed < allow };
 }

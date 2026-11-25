@@ -17,7 +17,7 @@ export const aiSkill = (d, team, diff) => diff + (team.perf - 0.5) * 0.08 + (d.t
 export const aiMax = team => CAR.max * (0.975 + team.perf * 0.025);
 
 // opts = { diff（難易度の base）, laps（周回数。練習は Infinity）, practice, arts（チーム id → 車の絵）, playerArt,
-//          grid（ドライバー id の並び。省略すると速い順で、自分は PLAYER_GRID 番手） }
+//          grid（ドライバー id の並び。省略すると速い順で、自分は PLAYER_GRID 番手）, setup（自分の車の性能 tunedCar） }
 export function createRace(track, opts){
   const L = track.length, line = track.startSeg * SEG;
   const entries = opts.practice ? DRIVERS.filter(d => d.player) : DRIVERS.slice();
@@ -44,7 +44,8 @@ export function createRace(track, opts){
     c.art = d.player ? opts.playerArt : opts.arts[team.id];
     // うまさ：難易度＋チームの速さ＋ドライバーの腕。少しだけ最高速にも差をつける
     c.skill = d.player ? 1 : aiSkill(d, team, opts.diff);
-    c.max = d.player ? CAR.max : aiMax(team);
+    c.max = d.player ? (opts.setup ? opts.setup.max : CAR.max) : aiMax(team);
+    if (d.player && opts.setup) c.p = opts.setup.p;   // パーツで強くなった自分の車
     c.react = d.player ? 0 : 0.12 + Math.random() * 0.35;   // スタートの反応
     c.lapsDone = -1;          // スタートラインの手前にいるので -1。最初にラインを越えると 0
     c.lapStart = 0;
@@ -157,7 +158,9 @@ function contacts(race){
       // 前後：後ろの車が速ければ前の車の速さに合わせ、前の車を少し押す
       if (back.speed > front.speed){
         const rel = back.speed - front.speed;
-        back.speed = front.speed * 0.97;
+        // 接触に強いパーツ（bumpRes）があると、落ちる速さが少ない
+        const res = (back.p && back.p.bumpRes) || 0;
+        back.speed = front.speed * 0.97 + (back.speed - front.speed * 0.97) * res * 0.6;
         front.speed += rel * 0.15;
         if ((back.player || front.player) && rel > CAR.max * 0.04) race.events.push({ type: 'bump', rel });
       }

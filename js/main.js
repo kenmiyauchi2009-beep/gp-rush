@@ -12,12 +12,14 @@ import { CAR, KMH, gearOf, posOf } from './physics.js';
 import { createRace, stepRace, simulateToEnd, results, gaps } from './race.js';
 import { TEAMS, DRIVERS, DIFFS, RACE_LAPS, PLAYER_GRID, PLAYER_TEAM, teamOf } from './data.js';
 import { POINTS, SKIP_GRID, newSeason, addResult, driverTable, teamTable, aiQualiTimes, gridFrom } from './season.js';
+import { newGarage, prizeFor, dropRarity, randomSlot } from './parts.js';
+import { openGarage, carSetup, carPower, grantPart, RARITY, partName, cr } from './garage.js';
 import { setupInput, input, steerInput, clearInput } from './input.js';
 import { setupHud, updateHud, drawMap, showDelta, showBanner, hideBanner, resizeHud } from './hud.js';
 import { initAudio, setEngine, blip, thud, setMuted, suspendAudio, resumeAudio } from './audio.js';
 
 // 版の番号（sw.js の VERSION と同じにする）
-export const APP_VERSION = '0.3.0';
+export const APP_VERSION = '0.4.0';
 
 const loaded = loadGame();
 SAVE.settings.diff = SAVE.settings.diff || 'normal';
@@ -25,6 +27,8 @@ SAVE.stats = Object.assign({ races: 0, wins: 0, podiums: 0 }, SAVE.stats || {});
 SAVE.records = SAVE.records || {};
 SAVE.history = SAVE.history || [];
 if (SAVE.season === undefined) SAVE.season = null;
+if (SAVE.cr == null) SAVE.cr = 0;
+if (!SAVE.garage) SAVE.garage = newGarage();
 
 // ---- コース（必要になったときに組み立てて覚えておく） ----
 const tracks = {};
@@ -86,6 +90,8 @@ function refreshTitle(){
   const year = (SAVE.history.length || 0) + 1;
   $('seasonSub').textContent = s && !s.done ? `第${s.round + 1}戦／${CALENDAR.length}・${COURSES[CALENDAR[s.round]].short}` : `シーズン${year}・全${CALENDAR.length}戦`;
   $('titleCirc').textContent = `${track.def.name}（${track.theme.time}）`;
+  const newParts = SAVE.garage.parts.filter(p => p.isNew).length;
+  $('garageSub').textContent = `戦力 ${carPower()}・${cr(SAVE.cr)}${newParts ? `・NEW ${newParts}` : ''}`;
 }
 
 function setRace(r){
@@ -241,6 +247,7 @@ function openSeason(){
       start('race', { grid: g.order, season: true });
     }));
     side.appendChild(btn('順位表', '', () => openStandings(openSeason)));
+    side.appendChild(btn(`ガレージ<small>戦力 ${carPower()}・${cr(SAVE.cr)}</small>`, '', () => openGarage(openMenu, openSeason)));
     side.appendChild(btn('タイトルへ', '', backToTitle));
     top.appendChild(side);
     sh.appendChild(top);
@@ -291,6 +298,7 @@ function start(kind, opts = {}){
     practice: kind !== 'race',
     runup: kind === 'quali' ? 80 : 30,
     grid: opts.grid,
+    setup: carSetup(),
     arts, playerArt,
   }));
   G.mode = 'lights';
@@ -346,7 +354,7 @@ function showQuali(){
     });
     sh.appendChild(tbl);
     const bs = h('div', 'rbtns');
-    bs.appendChild(btn('決勝へ', 'primary', () => start('race', { grid: g.order, season: true })));
+    bs.appendChild(btn('決勝へ', 'primary', () => start('race', { grid: g.order, season: true, pole: pos === 1 })));
     bs.appendChild(btn('予選をやり直す', '', () => start('quali')));
     sh.appendChild(bs);
     const me = tbl.querySelector('.me'); if (me) me.scrollIntoView({ block: 'center' });
@@ -373,12 +381,18 @@ function showResults(){
   if (G.opts.season && s && !s.done){
     gained = addResult(s, track.def.id, rows.map(x => x.car.driver.id), fastest ? fastest.car.driver.id : null);
   }
+  // 賞金とパーツ
+  const prize = prizeFor(me.pos, { season: !!gained, pole: !!G.opts.pole, fastest: fastest === me });
+  SAVE.cr += prize.cr;
+  const drop = grantPart(randomSlot(), dropRarity(me.pos));
   saveGame();
 
   $('rTitle').textContent = (gained ? `第${s.round}戦 ` : '') + `レース結果　${track.def.name}`;
   const moved = grid - me.pos;
   $('rSummary').innerHTML = `あなた：<b>${me.pos}位</b>（${grid}番手スタート${moved > 0 ? '・' + moved + '台抜き' : moved < 0 ? '・' + (-moved) + 'つ後退' : ''}）` +
-    `${gained ? `　<b>+${gained[ME]}点</b>` : ''}　ベストラップ ${fmtTime(me.best)}`;
+    `${gained ? `　<b>+${gained[ME]}点</b>` : ''}　ベストラップ ${fmtTime(me.best)}<br>` +
+    `賞金 <b>+${cr(prize.cr)}</b>${prize.bonus ? `（${[G.opts.pole ? 'ポール' : '', fastest === me ? 'ファステストラップ' : ''].filter(Boolean).join('・')}のボーナスつき）` : ''}　` +
+    `パーツ：<b style="color:${RARITY[drop.p.r].color}">${partName(drop.p)}</b>（${RARITY[drop.p.r].name}）${drop.scrapped ? `　所持品がいっぱいなので分解して +${cr(drop.scrapped)}` : ''}`;
   const tbl = $('rTable');
   tbl.innerHTML = '<div class="rrow hd"><span class="p">順位</span><span></span><span>ドライバー</span><span class="t">タイム</span><span class="bl">ベスト</span><span class="pt">' + (gained ? '点' : '') + '</span></div>';
   for (const x of rows){
@@ -394,13 +408,15 @@ function showResults(){
   }
   const bs = $('rBtns');
   bs.innerHTML = '';
+  const backToResults = () => { $('menu').classList.add('hidden'); $('results').classList.remove('hidden'); G.mode = 'results'; };
   if (gained){
     bs.appendChild(btn(s.done ? '最終結果へ' : 'シーズンへ', 'primary', () => { $('results').classList.add('hidden'); openSeason(); }));
-    bs.appendChild(btn('順位表', '', () => openStandings(() => { openMenu(() => {}); $('menu').classList.add('hidden'); $('results').classList.remove('hidden'); G.mode = 'results'; })));
+    bs.appendChild(btn('順位表', '', () => openStandings(backToResults)));
   } else {
     bs.appendChild(btn('もう一度', 'primary', () => start('race', G.opts)));
     bs.appendChild(btn('タイトルへ', '', () => { setEngine(0, 0, false); showTitle(); }));
   }
+  bs.appendChild(btn('ガレージ', '', () => openGarage(openMenu, backToResults)));
   $('hud').classList.add('hidden');
   $('results').classList.remove('hidden');
   G.mode = 'results';
@@ -435,6 +451,7 @@ function updateSoundBtn(){
 $('seasonBtn').onclick = openSeason;
 $('quickBtn').onclick = () => openCircuits('race');
 $('practiceBtn').onclick = () => openCircuits('practice');
+$('garageBtn').onclick = () => openGarage(openMenu, backToTitle);
 $('pauseBtn').onclick = pause;
 $('resumeBtn').onclick = resume;
 $('restartBtn').onclick = () => start(G.kind, G.opts);
@@ -531,7 +548,7 @@ function frame(now){
 
   const racing = G.mode === 'lights' || G.mode === 'race' || G.mode === 'finished' || G.mode === 'paused';
   if (racing){
-    const ge = gearOf(Math.min(1, pct));
+    const ge = gearOf(Math.min(1, c.speed / c.max));
     const moving = c.speed > 1;
     const isRace = G.kind === 'race';
     const gp = isRace ? gaps(r) : null;

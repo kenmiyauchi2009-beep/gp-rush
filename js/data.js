@@ -41,11 +41,11 @@ export const DRIVERS = [
 
 export const teamOf = id => TEAMS.find(t => t.id === id);
 
-// 難易度：ライバルのうまさの元（1.0 でほぼ理想の走り。1周の目安：0.76→約48秒、0.83→約45秒、0.9→約42秒）
+// 難易度：ライバルのうまさの元（カーブの速さにだけ効く。1.0 でほぼ理想の走り。グリーンバレーの1周の目安：0.61→約47.5秒、0.725→約44.5秒、0.85→約42秒）
 export const DIFFS = [
-  { id: 'easy',   name: 'やさしい',   base: 0.76 },
-  { id: 'normal', name: 'ふつう',     base: 0.83 },
-  { id: 'hard',   name: 'むずかしい', base: 0.9 },
+  { id: 'easy',   name: 'やさしい',   base: 0.61 },
+  { id: 'normal', name: 'ふつう',     base: 0.725 },
+  { id: 'hard',   name: 'むずかしい', base: 0.85 },
 ];
 
 export const RACE_LAPS = 3;
