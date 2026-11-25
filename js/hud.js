@@ -89,9 +89,15 @@ export function updateHud(s){
   }
 }
 
-let bannerTimer = 0;
+let bannerTimer = 0, bannerHtml = '';
 export function showBanner(html, ms = 2500){
   const el = $('banner');
+  // 出ているあいだの書き換え（ピットの残り時間など）はアニメーションをやり直さない
+  if (!el.classList.contains('hidden') && ms === 0 && bannerHtml.slice(0, 20) === html.slice(0, 20)){
+    if (bannerHtml !== html){ el.innerHTML = html; bannerHtml = html; }
+    return;
+  }
+  bannerHtml = html;
   el.innerHTML = html;
   el.classList.remove('hidden');
   // アニメーションをやり直す
@@ -99,7 +105,7 @@ export function showBanner(html, ms = 2500){
   clearTimeout(bannerTimer);
   if (ms) bannerTimer = setTimeout(() => el.classList.add('hidden'), ms);
 }
-export function hideBanner(){ clearTimeout(bannerTimer); $('banner').classList.add('hidden'); }
+export function hideBanner(){ clearTimeout(bannerTimer); bannerHtml = ''; $('banner').classList.add('hidden'); }
 
 let deltaTimer = 0;
 export function showDelta(d, isBest){

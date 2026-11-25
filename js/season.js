@@ -3,6 +3,7 @@ import { DRIVERS, TEAMS, teamOf } from './data.js';
 import { CALENDAR, SEG } from './track.js';
 import { newCar, updateCar, autopilot } from './physics.js';
 import { aiSkill, aiMax } from './race.js';
+import { gripOf } from './weather.js';
 
 export const POINTS = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1];
 export const SKIP_GRID = 12;     // 予選をとばしたときのスタート位置
@@ -47,11 +48,12 @@ export function teamTable(season){
 
 // 予選：ライバルが1人で1周走ったときのタイム（コース・うまさごとに覚えておく）＋ばらつき
 const lapCache = new Map();
-function soloLap(track, skill, max){
-  const key = `${track.def.id}:${skill.toFixed(3)}:${max.toFixed(0)}`;
+function soloLap(track, skill, max, weather = 'sun'){
+  const key = `${track.def.id}:${skill.toFixed(3)}:${max.toFixed(0)}:${weather}`;
   if (lapCache.has(key)) return lapCache.get(key);
   const c = newCar((track.startSeg - 80 + track.N) % track.N * SEG, 0);
   c.max = max;
+  c.grip = weather === 'rain' ? gripOf('wet', 0, 'rain') : gripOf('soft', 0, 'sun');
   c.speed = 0;   // 予選の自分と同じく、80セグメント手前から止まった状態で出る
   const dt = 1 / 60, line = track.startSeg * SEG, L = track.length;
   const dist = () => (((c.z - line) % L) + L) % L;
@@ -67,12 +69,12 @@ function soloLap(track, skill, max){
   return lap ?? 999;
 }
 
-export function aiQualiTimes(track, diff){
+export function aiQualiTimes(track, diff, weather = 'sun'){
   const out = {};
   for (const d of DRIVERS){
     if (d.player) continue;
     const team = teamOf(d.team);
-    let t = soloLap(track, aiSkill(d, team, diff), aiMax(team));
+    let t = soloLap(track, aiSkill(d, team, diff), aiMax(team), weather);
     t += (Math.random() - 0.5) * 0.5;
     if (Math.random() < 0.06) t += 0.8 + Math.random() * 1.5;   // ときどきミス
     out[d.id] = t;

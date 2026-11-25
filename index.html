@@ -43,12 +43,18 @@
       <div class="row">
         <div class="gear"><small>GEAR</small><b id="hGear">N</b></div>
         <div class="spd"><b id="hSpd">0</b><small>km/h</small></div>
+        <div class="tyre" id="hTyre"><i id="hTyreC">M</i><small id="hWear">100%</small></div>
       </div>
     </div>
     <div class="gaps" id="hGaps"><span>前 <b id="hAhead">-</b></span><span>後 <b id="hBehind">-</b></span></div>
     <div class="delta" id="hDelta"></div>
     <div class="banner hidden" id="banner"></div>
     <div class="hint" id="hHint">左右を押して曲がる・両方でブレーキ</div>
+    <div class="pitbox" id="pitBox">
+      <button class="pitb" id="pitBtn" aria-label="ピットイン">PIT</button>
+      <div class="pitmenu hidden" id="pitMenu"></div>
+    </div>
+    <div class="wx" id="hWx"></div>
   </div>
 
   <!-- タイトル -->
@@ -60,7 +66,10 @@
       <button id="practiceBtn">練習走行<small>1人で走る</small></button>
       <button id="garageBtn">ガレージ<small id="garageSub"></small></button>
     </div>
-    <div class="diff" id="diffSel" role="radiogroup" aria-label="ライバルの強さ"></div>
+    <div class="trow">
+      <div class="diff" id="diffSel" role="radiogroup" aria-label="ライバルの強さ"></div>
+      <div class="diff" id="lapSel" role="radiogroup" aria-label="レースの周回数"></div>
+    </div>
     <div class="tver" id="titleVer"></div>
     <div class="tcirc" id="titleCirc"></div>
   </div>
@@ -72,6 +81,7 @@
       <button class="primary" id="resumeBtn">続ける</button>
       <button id="restartBtn">最初からやり直す</button>
       <button id="soundBtn" aria-pressed="true">音：ON</button>
+      <button id="bgmBtn" aria-pressed="true">BGM：ON</button>
       <button id="quitBtn">タイトルへ</button>
       <p class="offl" id="offlStatus"></p>
     </div>

@@ -66,15 +66,18 @@ export function updateCar(c, track, ctl, dt){
   // 曲がるときの横の動きは、車ごとの最高速ではなく実際の速さで決まる
   const ap = c.speed / CAR.max;
 
+  // タイヤと天気のグリップ（1 が基準）。曲がれる速さはだいたいグリップに比例する
+  const grip = c.grip || 1, gs = Math.sqrt(grip);
+
   // ハンドル（押した・離したをなめらかに）
   c.steer += (ctl.steer - c.steer) * Math.min(1, dt * P.steerResp);
-  c.x += dt * ap * P.steer * c.steer;
+  c.x += dt * ap * P.steer * gs * c.steer;
   // カーブで外へ振られる（右カーブなら左へ）
-  c.x -= dt * ap * ap * seg.curve * P.cf;
+  c.x -= dt * ap * ap * seg.curve * P.cf / gs;
 
   // アクセル・ブレーキ
   if (ctl.brake){
-    c.speed -= P.brake * CAR.max * dt;
+    c.speed -= P.brake * Math.pow(grip, 0.7) * CAR.max * dt;
     c.braking = Math.min(1, c.braking + dt * 8);
   } else {
     if (ctl.throttle !== false) c.speed += P.accel * max * (1 - pct * pct) * dt;
@@ -134,13 +137,13 @@ export const cornerLimit = (curve, grip = 1.42, P = CAR) =>
 
 // コースの各セグメントで「その先を見て出してよい速さ」と「走る線」を、うまさごとに前もって計算しておく
 const planCache = new Map();
-function planFor(track, skill, P = CAR){
-  const key = `${track.def.id}:${skill.toFixed(3)}:${P.steer.toFixed(3)}:${P.cf.toFixed(3)}:${P.brake.toFixed(3)}`;
+function planFor(track, skill, P = CAR, bk = 1){
+  const key = `${track.def.id}:${skill.toFixed(3)}:${P.steer.toFixed(3)}:${P.cf.toFixed(3)}:${(P.brake * bk).toFixed(3)}`;
   let p = planCache.get(key);
   if (p) return p;
   const N = track.N, segs = track.segs;
   const lim = new Float32Array(N), line = new Float32Array(N);
-  const dec = P.brake * 0.85;              // 最高速に対する割合で計算する
+  const dec = P.brake * bk * 0.85;         // 最高速に対する割合で計算する（bk：雨などでブレーキが効きにくい分）
   // うまさ（skill）はカーブの速さだけに効く。直線では最高速まで出す
   for (let i = 0; i < N; i++) lim[i] = Math.min(1.2, cornerLimit(segs[i].curve, 1.42, P) * skill);
   // 後ろから前へ：v² ≤ (次のセグメントの v)² + 2・減速・距離 を2周まわして行き渡らせる
@@ -169,13 +172,15 @@ export function autopilot(c, track, skill = 0.95, targetX = null){
   const pct = c.speed / max;
   const seg = track.at(pz);
   const P = c.p || CAR;
-  const plan = planFor(track, skill, P);
+  // グリップが落ちているぶん、カーブはゆっくり（計算を使い回せるように少し丸める）
+  const g = Math.round((c.grip || 1) * 50) / 50;
+  const plan = planFor(track, Math.round(skill * g * 200) / 200, P, Math.pow(g, 0.7));
   // 曲がれる速さは実際の速さ（CAR.max を基準）で決まる。直線では車の最高速まで出す
   const allow = Math.min(plan.lim[seg.index] * CAR.max, max) * (1 + 0.05 * (c.tow || 0));
   // 曲がりの内側に寄せる
   const target = targetX == null ? plan.line[seg.index] : targetX;
   const ap = c.speed / CAR.max;
-  const hold = ap * seg.curve * P.cf / P.steer;
+  const hold = ap * seg.curve * P.cf / (P.steer * (c.grip || 1));
   const steer = clamp(hold + (target - c.x) * 1.8, -1, 1);
   return { steer, brake: c.speed > allow * 1.02, throttle: c.speed < allow };
 }

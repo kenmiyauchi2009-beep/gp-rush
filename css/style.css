@@ -136,6 +136,30 @@ button{font:inherit;color:inherit}
 .champ .cn{display:block;font-size:24px;font-style:italic;color:var(--accent2)}
 .champ .mnote b{color:var(--accent2)}
 
+/* ---- タイヤ・ピット・天気 ---- */
+.tyre{display:flex;flex-direction:column;align-items:center;gap:2px}
+.tyre i{width:26px;height:26px;border-radius:50%;border:4px solid var(--tc,#ffd23f);background:#111;display:grid;place-items:center;
+  font-style:normal;font-size:11px;font-weight:800;color:var(--tc,#ffd23f)}
+.tyre small{font-size:10px;color:var(--muted)}
+.tyre.worn small{color:var(--bad);font-weight:700}
+.pitbox{position:absolute;left:calc(var(--sl) + 10px);top:50%;transform:translateY(-50%);display:flex;align-items:center;gap:6px}
+.pitb{pointer-events:auto;width:56px;height:56px;border-radius:50%;border:2px solid rgba(255,255,255,.35);background:rgba(8,12,22,.6);
+  font-weight:900;font-size:14px;font-style:italic;line-height:1.1;padding:0}
+.pitb.on{background:#c71f2a;border-color:#fff}
+.pitmenu{display:flex;gap:6px}
+.pitmenu button{pointer-events:auto;width:48px;height:48px;border-radius:50%;border:4px solid var(--tc);background:#111;color:var(--tc);
+  font-weight:800;font-size:14px;padding:0}
+.wx{position:absolute;top:calc(var(--st) + 10px);right:calc(var(--sr) + 140px);background:var(--panel);border:1px solid var(--line);
+  border-radius:10px;padding:4px 10px;font-size:13px}
+.trow{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+.tyres{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.tybtn{border:1px solid var(--line);border-radius:12px;background:#18223a;padding:8px;display:flex;flex-direction:column;align-items:center;gap:4px}
+.tybtn i{width:38px;height:38px;border-radius:50%;border:6px solid var(--tc);background:#111;display:grid;place-items:center;font-style:normal;font-weight:800;color:var(--tc)}
+.tybtn b{font-size:14px}
+.tybtn small{font-size:11px;color:var(--muted);text-align:center;line-height:1.35}
+.tybtn[aria-pressed="true"]{outline:2px solid var(--accent2);background:#22304f}
+.tybtn em{font-style:normal;font-size:10px;background:var(--accent2);color:#111;border-radius:6px;padding:0 5px}
+
 /* ---- ガレージ ---- */
 #menu h2 .crv{color:var(--accent2);font-size:14px}
 #menu h2 .pow{color:#9fd3ff;font-size:14px}
@@ -225,6 +249,8 @@ button:active{transform:scale(.97)}
   .lapno b{font-size:20px}
   .times .now{font-size:17px}
   #map{width:104px;height:78px}
+  .wx{right:calc(var(--sr) + 124px)}
+  .pitb{width:50px;height:50px}
   .spd b{font-size:32px}
   .gear b{font-size:22px}
   .tlogo h1{font-size:52px}

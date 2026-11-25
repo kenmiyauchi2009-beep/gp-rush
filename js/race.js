@@ -4,6 +4,9 @@ import { CAR, newCar, updateCar, autopilot, posOf } from './physics.js';
 import { PLAYER_Z } from './render.js';
 import { CAR_W } from './carart.js';
 import { DRIVERS, teamOf, PLAYER_GRID } from './data.js';
+import { gripOf, wearRate, COMPOUNDS } from './weather.js';
+
+export const PIT_LOSS = 8.5;                  // ピットで止まっている時間（秒。ピットレーンを走る分も含む）
 
 
 export const CAR_LEN = 700;                    // 車の前後の長さ（ワールド単位）
@@ -56,14 +59,52 @@ export function createRace(track, opts){
     c.finishT = null;
     c.prevD = lineDist(c, track);
     c.side = 0;               // 追い越しで寄せている側
+    // タイヤ
+    c.tyre = d.player ? (opts.tyre || 'medium') : aiStartTyre(opts, d, team);
+    c.wear = 0;
+    c.grip = gripOf(c.tyre, 0, opts.weather || 'sun');
+    c.pitReq = null;          // ピットで替えるタイヤ（予約）
+    c.pitT = 0;               // ピットで止まっている残り時間
+    c.inPit = false;
+    c.stops = 0;
     return c;
   });
   return {
     track, cars, player: cars.find(c => c.player),
+    weather: opts.weather || 'sun',
     laps: opts.laps, practice: !!opts.practice,
     t: 0, started: false,
     events: [],               // 自分に起きたこと（周回・ゴール・接触）
   };
+}
+
+// ライバルのスタートのタイヤ
+function aiStartTyre(opts, d, team){
+  if (opts.weather === 'rain') return 'wet';
+  const laps = opts.laps === Infinity ? 3 : opts.laps;
+  const r = Math.random();
+  if (laps <= 3) return r < 0.75 ? 'soft' : 'medium';
+  if (laps <= 5) return r < 0.3 ? 'soft' : r < 0.85 ? 'medium' : 'hard';
+  return r < 0.15 ? 'soft' : r < 0.6 ? 'medium' : 'hard';
+}
+
+// 残りの周回に合うタイヤ
+function pickTyre(weather, remain){
+  if (weather === 'rain') return 'wet';
+  if (remain * COMPOUNDS.soft.wear <= 0.8) return 'soft';
+  if (remain * COMPOUNDS.medium.wear <= 0.85) return 'medium';
+  return 'hard';
+}
+
+// ライバルがピットに入るか（ラインを越えたときに決める）
+function aiWantsPit(c, race){
+  const remain = race.laps - c.lapsDone;
+  if (race.laps === Infinity || remain < 1) return null;
+  if (race.weather !== 'rain' && c.tyre === 'wet') return pickTyre(race.weather, remain);
+  if (race.weather === 'rain' && c.tyre !== 'wet') return 'wet';
+  const rate = wearRate(c.tyre, race.weather);
+  if (c.wear > 0.45 && c.wear + rate * remain > 0.92) return pickTyre(race.weather, remain);
+  return null;
 }
 
 export function lineDist(c, track){
@@ -88,7 +129,7 @@ function aiControl(c, race){
   const { track, cars } = race, L = track.length, my = posOf(c, track);
   let block = null, bdz = Infinity;
   for (const o of cars){
-    if (o === c) continue;
+    if (o === c || o.inPit) continue;
     const dz = mod(posOf(o, track) - my, L);
     if (dz <= 0 || dz > 26 * SEG) continue;
     if (Math.abs(o.x - c.x) > 0.55) continue;
@@ -103,7 +144,7 @@ function aiControl(c, race){
       const t = block.x + side * 0.58;
       if (Math.abs(t) > 0.88) return false;
       for (const o of cars){
-        if (o === c || o === block) continue;
+        if (o === c || o === block || o.inPit) continue;
         const dz = mod(posOf(o, track) - my + L / 2, L) - L / 2;   // 前後の差（-L/2〜L/2）
         if (dz > -CAR_LEN * 1.2 && dz < 22 * SEG && Math.abs(o.x - t) < 0.42) return false;
       }
@@ -134,7 +175,7 @@ function towFor(c, race){
   const { track, cars } = race, L = track.length, my = posOf(c, track);
   let tow = 0;
   for (const o of cars){
-    if (o === c) continue;
+    if (o === c || o.inPit) continue;
     const dz = mod(posOf(o, track) - my, L);
     if (dz < 4 * SEG || dz > 30 * SEG) continue;
     if (Math.abs(o.x - c.x) > 0.35) continue;
@@ -149,6 +190,7 @@ function contacts(race){
   for (let i = 0; i < cars.length; i++){
     for (let j = i + 1; j < cars.length; j++){
       const a = cars[i], b = cars[j];
+      if (a.inPit || b.inPit) continue;
       const dx = b.x - a.x;
       if (Math.abs(dx) >= TOUCH) continue;
       let dz = mod(posOf(b, track) - posOf(a, track), L);
@@ -183,6 +225,21 @@ export function stepRace(race, dt, playerCtl){
   if (race.started) race.t += dt;
   for (const c of cars) c.tow = race.started ? towFor(c, race) : 0;
   for (const c of cars){
+    // ピットで止まっている
+    if (c.inPit){
+      c.speed = 0;
+      c.pitT -= dt;
+      if (c.pitT <= 0){
+        c.inPit = false;
+        c.tyre = c.newTyre;
+        c.wear = 0;
+        c.stops++;
+        c.speed = CAR.max * 0.3;
+        c.grip = gripOf(c.tyre, 0, race.weather);
+        if (c.player) race.events.push({ type: 'pitOut', tyre: c.tyre });
+      }
+      continue;
+    }
     let ctl;
     if (!race.started) ctl = { steer: 0, brake: false, throttle: false };
     else if (c.player && playerCtl && !c.finished) ctl = playerCtl;
@@ -191,6 +248,11 @@ export function stepRace(race, dt, playerCtl){
     else ctl = aiControl(c, race);
     updateCar(c, track, ctl, dt);
     if (c.player && c.hit) race.events.push({ type: 'hit' });
+    // タイヤが減る（走った距離と、ハンドルを切っている分）
+    if (race.started){
+      c.wear = Math.min(1, c.wear + c.speed * dt / track.length * wearRate(c.tyre, race.weather) * (1 + 0.3 * Math.abs(c.steer)));
+      c.grip = gripOf(c.tyre, c.wear, race.weather);
+    }
   }
   if (cars.length > 1) contacts(race);
 
@@ -211,10 +273,23 @@ export function stepRace(race, dt, playerCtl){
         race.events.push({ type: 'go' });
       }
       c.lapStart = race.t;
-      if (c.lapsDone >= race.laps && !c.finished){
+      // 1位がゴールしたあとは、周回遅れの車もラインを越えたところでゴール
+      if ((c.lapsDone >= race.laps || (race.leaderDone && c.lapsDone >= 1)) && !c.finished){
         c.finished = true;
         c.finishT = race.t;
+        race.leaderDone = true;
         if (c.player) race.events.push({ type: 'finish' });
+      } else if (c.lapsDone >= 0){
+        // ピット：自分は予約していたら、ライバルはタイヤの減り具合で決める
+        const want = c.player ? c.pitReq : (race.started ? aiWantsPit(c, race) : null);
+        if (want){
+          c.inPit = true;
+          c.pitT = PIT_LOSS + (c.player ? 0 : Math.random() * 0.8);
+          c.newTyre = want;
+          c.pitReq = null;
+          c.speed = 0;
+          if (c.player) race.events.push({ type: 'pitIn', tyre: want });
+        }
       }
     }
     c.prevD = d;

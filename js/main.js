@@ -16,10 +16,12 @@ import { newGarage, prizeFor, dropRarity, randomSlot } from './parts.js';
 import { openGarage, carSetup, carPower, grantPart, RARITY, partName, cr } from './garage.js';
 import { setupInput, input, steerInput, clearInput } from './input.js';
 import { setupHud, updateHud, drawMap, showDelta, showBanner, hideBanner, resizeHud } from './hud.js';
-import { initAudio, setEngine, blip, thud, setMuted, suspendAudio, resumeAudio } from './audio.js';
+import { initAudio, setEngine, setRaceSounds, blip, thud, wrench, setMuted, setBgmEnabled, setBgmPlaying, suspendAudio, resumeAudio } from './audio.js';
+import { WEATHER, COMPOUNDS, COMPOUND_ORDER, rollWeather, envFor, suggestCompound, wearRate } from './weather.js';
+import { SEG } from './track.js';
 
 // 版の番号（sw.js の VERSION と同じにする）
-export const APP_VERSION = '0.4.0';
+export const APP_VERSION = '0.5.0';
 
 const loaded = loadGame();
 SAVE.settings.diff = SAVE.settings.diff || 'normal';
@@ -28,6 +30,9 @@ SAVE.records = SAVE.records || {};
 SAVE.history = SAVE.history || [];
 if (SAVE.season === undefined) SAVE.season = null;
 if (SAVE.cr == null) SAVE.cr = 0;
+if (!SAVE.settings.laps) SAVE.settings.laps = RACE_LAPS;
+if (SAVE.settings.bgm == null) SAVE.settings.bgm = true;
+const LAP_CHOICES = [3, 5, 8];
 if (!SAVE.garage) SAVE.garage = newGarage();
 
 // ---- コース（必要になったときに組み立てて覚えておく） ----
@@ -35,7 +40,13 @@ const tracks = {};
 let track = null;
 function setTrack(id){
   track = tracks[id] || (tracks[id] = buildTrack(COURSES[id]));
-  useTheme(track.theme);
+  setEnv('sun');
+}
+// 天気に合わせた景色（空・霧・色味・景色の絵）
+function setEnv(weather){
+  G.weather = weather;
+  G.env = envFor(track.theme, weather);
+  useTheme(G.env);
 }
 
 const playerArt = makeCar(teamOf(PLAYER_TEAM));
@@ -48,6 +59,7 @@ const mapColor = t => (light(t.body) ? t.accent : t.body);
 const ME = DRIVERS.find(d => d.player).id;
 
 const G = {
+  weather: 'sun', env: null,
   mode: 'title',           // title / lights / race / finished / results / quali / paused / menu
   before: 'race',          // 一時停止の前の状態
   kind: 'race',            // race / practice / quali
@@ -71,6 +83,19 @@ $('titleVer').textContent = '版 ' + APP_VERSION;
 const onResize = () => { resize(); resizeHud(); };
 window.addEventListener('resize', onResize);
 if (window.ResizeObserver) new ResizeObserver(onResize).observe($('stage'));
+
+function buildLaps(){
+  const el = $('lapSel');
+  el.innerHTML = '<small>周回</small>';
+  for (const n of LAP_CHOICES){
+    const b = document.createElement('button');
+    b.textContent = n + '周';
+    b.setAttribute('role', 'radio');
+    b.setAttribute('aria-checked', String(n === SAVE.settings.laps));
+    b.onclick = () => { SAVE.settings.laps = n; saveGame(); buildLaps(); };
+    el.appendChild(b);
+  }
+}
 
 function buildDiff(){
   const el = $('diffSel');
@@ -107,6 +132,7 @@ function hideOverlays(){
 function showTitle(){
   hideOverlays();
   G.mode = 'title';
+  setBgmPlaying(true);
   $('title').classList.remove('hidden');
   setTrack(nextRoundId() || CALENDAR[Math.floor(Math.random() * CALENDAR.length)]);
   demoRace();
@@ -128,6 +154,7 @@ const h = (tag, cls, html) => { const e = document.createElement(tag); if (cls) 
 const btn = (label, cls, onclick) => { const b = h('button', cls, label); b.onclick = onclick; return b; };
 
 function openMenu(build){
+  setBgmPlaying(true);
   for (const id of ['title', 'pause', 'results', 'hud']) $(id).classList.add('hidden');
   const sh = $('menuSheet');
   sh.innerHTML = '';
@@ -150,11 +177,16 @@ function circuitCard(id, extra){
 
 function openCircuits(kind){
   openMenu(sh => {
-    sh.appendChild(h('h2', '', kind === 'practice' ? '練習走行：サーキットを選ぶ' : `クイックレース：サーキットを選ぶ（${RACE_LAPS}周・ライバル ${diffById(SAVE.settings.diff).name}）`));
+    sh.appendChild(h('h2', '', kind === 'practice' ? '練習走行：サーキットを選ぶ' : `クイックレース：サーキットを選ぶ（${SAVE.settings.laps}周・ライバル ${diffById(SAVE.settings.diff).name}）`));
     const list = h('div', 'clist');
     for (const id of CALENDAR){
       const b = circuitCard(id);
-      b.onclick = () => { setTrack(id); start(kind); };
+      b.onclick = () => {
+        setTrack(id);
+        const weather = rollWeather(COURSES[id].theme);
+        if (kind === 'practice') start('practice', { weather, tyre: suggestCompound(3, weather) });
+        else openPreRace({ weather, laps: SAVE.settings.laps }, backToTitle);
+      };
       list.appendChild(b);
     }
     sh.appendChild(list);
@@ -217,7 +249,7 @@ function openSeason(){
     const diff = diffById(SAVE.settings.diff);
     openMenu(sh => {
       sh.appendChild(h('h2', '', `シーズン${year}を始める`));
-      sh.appendChild(h('p', 'mnote', `全${CALENDAR.length}戦・各${RACE_LAPS}周。上位10台にポイント（${POINTS.join('・')}）。<br>各戦の前に予選（1周のタイムアタック）でスタート位置を決める。とばすと${SKIP_GRID}番手から。<br>ライバルの強さ：<b>${diff.name}</b>（タイトル画面で変えられる。シーズン中は変わらない）`));
+      sh.appendChild(h('p', 'mnote', `全${CALENDAR.length}戦・各${SAVE.settings.laps}周（タイトル画面で変えられる）。上位10台にポイント（${POINTS.join('・')}）。<br>各戦の前に予選（1周のタイムアタック）でスタート位置を決める。とばすと${SKIP_GRID}番手から。<br>ライバルの強さ：<b>${diff.name}</b>（タイトル画面で変えられる。シーズン中は変わらない）`));
       const list = h('div', 'clist');
       CALENDAR.forEach((id, i) => { const b = circuitCard(id, `第${i + 1}戦`); b.disabled = true; list.appendChild(b); });
       sh.appendChild(list);
@@ -225,7 +257,7 @@ function openSeason(){
         sh.appendChild(h('p', 'mnote', 'これまで：' + SAVE.history.map(x => `シーズン${x.year} ${x.me}位${x.me === 1 ? '（チャンピオン）' : ''}`).join('・')));
       }
       const bs = h('div', 'rbtns');
-      bs.appendChild(btn('始める', 'primary', () => { SAVE.season = newSeason(diff.id, year); saveGame(); openSeason(); }));
+      bs.appendChild(btn('始める', 'primary', () => { SAVE.season = newSeason(diff.id, year); SAVE.season.laps = SAVE.settings.laps; saveGame(); openSeason(); }));
       bs.appendChild(btn('タイトルへ', '', backToTitle));
       sh.appendChild(bs);
     });
@@ -233,18 +265,23 @@ function openSeason(){
   }
   const id = CALENDAR[s.round];
   if (!track || track.def.id !== id){ setTrack(id); demoRace(); }
+  s.weather = s.weather || [];
+  if (!s.weather[s.round]){ s.weather[s.round] = rollWeather(COURSES[id].theme); saveGame(); }
+  const wx = WEATHER[s.weather[s.round]];
+  const laps = s.laps || RACE_LAPS;
+  const raceOpts = (extra) => Object.assign({ season: true, weather: wx.id, laps }, extra);
   openMenu(sh => {
-    sh.appendChild(h('h2', '', `シーズン${s.year}　第${s.round + 1}戦／${CALENDAR.length}（ライバル ${diffById(s.diff).name}）`));
+    sh.appendChild(h('h2', '', `シーズン${s.year}　第${s.round + 1}戦／${CALENDAR.length}（${laps}周・ライバル ${diffById(s.diff).name}）`));
     const top = h('div', 'hubtop');
-    const card = circuitCard(id, `第${s.round + 1}戦`);
+    const card = circuitCard(id, `第${s.round + 1}戦　予報 ${wx.icon} ${wx.name}`);
     card.classList.add('next');
     card.disabled = true;
     top.appendChild(card);
     const side = h('div', 'hubside');
-    side.appendChild(btn('予選を走る<small>1周のタイムアタック</small>', 'primary', () => start('quali')));
+    side.appendChild(btn('予選を走る<small>1周のタイムアタック</small>', 'primary', () => start('quali', { weather: wx.id, tyre: wx.id === 'rain' ? 'wet' : 'soft' })));
     side.appendChild(btn(`予選をとばす<small>${SKIP_GRID}番手から決勝</small>`, '', () => {
-      const g = gridFrom(aiQualiTimes(track, diffById(s.diff).base), null);
-      start('race', { grid: g.order, season: true });
+      const g = gridFrom(aiQualiTimes(track, diffById(s.diff).base, wx.id), null);
+      openPreRace(raceOpts({ grid: g.order }), openSeason);
     }));
     side.appendChild(btn('順位表', '', () => openStandings(openSeason)));
     side.appendChild(btn(`ガレージ<small>戦力 ${carPower()}・${cr(SAVE.cr)}</small>`, '', () => openGarage(openMenu, openSeason)));
@@ -284,6 +321,7 @@ function openChampion(){
 // kind：race / practice / quali。opts：{ grid（ドライバー id の並び）, season（シーズンの決勝か） }
 function start(kind, opts = {}){
   initAudio();
+  setBgmPlaying(false);
   clearInput();
   G.kind = kind;
   G.opts = opts;
@@ -292,9 +330,14 @@ function start(kind, opts = {}){
   $('hHint').classList.remove('gone');
   const s = SAVE.season;
   const diff = (opts.season || kind === 'quali') && s ? diffById(s.diff) : diffById(SAVE.settings.diff);
+  const weather = opts.weather || 'sun';
+  setEnv(weather);
+  closePitMenu();
   setRace(createRace(track, {
     diff: diff.base,
-    laps: kind === 'race' ? RACE_LAPS : kind === 'quali' ? 1 : Infinity,
+    weather,
+    tyre: opts.tyre || suggestCompound(opts.laps || 3, weather),
+    laps: kind === 'race' ? (opts.laps || SAVE.settings.laps) : kind === 'quali' ? 1 : Infinity,
     practice: kind !== 'race',
     runup: kind === 'quali' ? 80 : 30,
     grid: opts.grid,
@@ -305,8 +348,72 @@ function start(kind, opts = {}){
   G.lights = 0; G.lightT = 0; G.holdT = 0.5 + Math.random() * 1.2;
   G.hintT = 6;
   G.finishT = 0;
-  if (kind === 'quali') showBanner('<b>QUALIFYING</b><span>予選：ラインを越えてから1周</span>', 2600);
+  const wx = WEATHER[weather];
+  $('hWx').textContent = `${wx.icon} ${wx.name}`;
+  $('pitBox').classList.toggle('hidden', kind === 'quali');
+  if (kind === 'quali') showBanner(`<b>QUALIFYING</b><span>予選：ラインを越えてから1周　${wx.icon} ${wx.name}</span>`, 2600);
+  else showBanner(`<b>${wx.icon} ${wx.name}</b><span>タイヤ：${COMPOUNDS[G.race.player.tyre].name}${kind === 'race' ? `　${G.race.laps}周` : ''}</span>`, 2400);
 }
+
+// ---- スタート前：タイヤを選ぶ ----
+function openPreRace(opts, back){
+  const laps = opts.laps || SAVE.settings.laps;
+  const wx = WEATHER[opts.weather || 'sun'];
+  let pick = suggestCompound(laps, wx.id);
+  const draw = () => openMenu(sh => {
+    sh.appendChild(h('h2', '', `${track.def.short}　${laps}周　${wx.icon} ${wx.name}`));
+    sh.appendChild(h('p', 'mnote', 'スタートのタイヤを選ぶ。レース中は左の「PIT」ボタンでタイヤを選ぶと、次にスタートラインを通るときに交換する（約9秒かかる）。'));
+    const list = h('div', 'tyres');
+    const sug = suggestCompound(laps, wx.id);
+    for (const id of COMPOUND_ORDER){
+      const c = COMPOUNDS[id];
+      const per = Math.round(wearRate(id, wx.id) * 100);
+      const lapsOk = Math.floor(0.8 / wearRate(id, wx.id));
+      const b = h('button', 'tybtn');
+      b.style.setProperty('--tc', c.color);
+      const grip = Math.round((wx.id === 'rain' ? c.wet : c.grip) * 100);
+      b.innerHTML = `<i>${c.short}</i><b>${c.name}${id === sug ? ' <em>おすすめ</em>' : ''}</b><small>${c.note}<br>グリップ ${grip}・1周で約${per}%減る<br>もつのは約${lapsOk}周</small>`;
+      b.setAttribute('aria-pressed', String(pick === id));
+      b.onclick = () => { pick = id; draw(); };
+      list.appendChild(b);
+    }
+    sh.appendChild(list);
+    const bs = h('div', 'rbtns');
+    bs.appendChild(btn('スタート', 'primary', () => start('race', Object.assign({}, opts, { tyre: pick, laps }))));
+    bs.appendChild(btn('もどる', '', back));
+    sh.appendChild(bs);
+  });
+  draw();
+}
+
+// ---- ピット ----
+function closePitMenu(){ $('pitMenu').classList.add('hidden'); }
+function refreshPit(){
+  const p = G.race && G.race.player;
+  const b = $('pitBtn');
+  if (!p) return;
+  const txt = p.inPit ? 'PIT<br>…' : p.pitReq ? `PIT<br>${COMPOUNDS[p.pitReq].short}` : 'PIT';
+  if (b.innerHTML !== txt) b.innerHTML = txt;
+  b.classList.toggle('on', !!p.pitReq || p.inPit);
+}
+$('pitBtn').onclick = () => {
+  const p = G.race && G.race.player;
+  if (!p || G.mode !== 'race' || p.inPit) return;
+  if (p.pitReq){ p.pitReq = null; toast('ピットインを取り消した'); refreshPit(); return; }
+  const m = $('pitMenu');
+  if (!m.classList.contains('hidden')){ closePitMenu(); return; }
+  m.innerHTML = '';
+  for (const id of COMPOUND_ORDER){
+    const c = COMPOUNDS[id];
+    const t = document.createElement('button');
+    t.textContent = c.short;
+    t.style.setProperty('--tc', c.color);
+    t.setAttribute('aria-label', c.name + 'に交換');
+    t.onclick = () => { p.pitReq = id; closePitMenu(); toast(`次の周でピットイン：${c.name}`); refreshPit(); };
+    m.appendChild(t);
+  }
+  m.classList.remove('hidden');
+};
 
 function onLap(e){
   const b = bestOf();
@@ -337,7 +444,7 @@ function onFinish(){
 function showQuali(){
   const s = SAVE.season;
   const mine = G.race.player.lastLap;
-  const g = gridFrom(aiQualiTimes(track, diffById(s.diff).base), mine);
+  const g = gridFrom(aiQualiTimes(track, diffById(s.diff).base, G.weather), mine);
   const pos = g.order.indexOf(ME) + 1;
   G.mode = 'menu';
   openMenu(sh => {
@@ -354,8 +461,9 @@ function showQuali(){
     });
     sh.appendChild(tbl);
     const bs = h('div', 'rbtns');
-    bs.appendChild(btn('決勝へ', 'primary', () => start('race', { grid: g.order, season: true, pole: pos === 1 })));
-    bs.appendChild(btn('予選をやり直す', '', () => start('quali')));
+    const wxId = G.weather;
+    bs.appendChild(btn('決勝へ', 'primary', () => openPreRace({ grid: g.order, season: true, pole: pos === 1, weather: wxId, laps: s.laps || RACE_LAPS }, openSeason)));
+    bs.appendChild(btn('予選をやり直す', '', () => start('quali', G.opts)));
     sh.appendChild(bs);
     const me = tbl.querySelector('.me'); if (me) me.scrollIntoView({ block: 'center' });
   });
@@ -382,7 +490,7 @@ function showResults(){
     gained = addResult(s, track.def.id, rows.map(x => x.car.driver.id), fastest ? fastest.car.driver.id : null);
   }
   // 賞金とパーツ
-  const prize = prizeFor(me.pos, { season: !!gained, pole: !!G.opts.pole, fastest: fastest === me });
+  const prize = prizeFor(me.pos, { season: !!gained, pole: !!G.opts.pole, fastest: fastest === me, laps: r.laps });
   SAVE.cr += prize.cr;
   const drop = grantPart(randomSlot(), dropRarity(me.pos));
   saveGame();
@@ -420,6 +528,7 @@ function showResults(){
   $('hud').classList.add('hidden');
   $('results').classList.remove('hidden');
   G.mode = 'results';
+  setBgmPlaying(true);
   const mine = tbl.querySelector('.me');
   if (mine) mine.scrollIntoView({ block: 'center' });
 }
@@ -443,10 +552,18 @@ function resume(){
   G.mode = G.before;
 }
 function updateSoundBtn(){
-  const on = SAVE.settings.sound;
+  const on = SAVE.settings.sound, bg = SAVE.settings.bgm;
   $('soundBtn').textContent = '音：' + (on ? 'ON' : 'OFF');
   $('soundBtn').setAttribute('aria-pressed', String(on));
+  $('bgmBtn').textContent = 'BGM：' + (bg ? 'ON' : 'OFF');
+  $('bgmBtn').setAttribute('aria-pressed', String(bg));
 }
+$('bgmBtn').onclick = () => {
+  SAVE.settings.bgm = !SAVE.settings.bgm;
+  setBgmEnabled(SAVE.settings.bgm);
+  saveGame();
+  updateSoundBtn();
+};
 
 $('seasonBtn').onclick = openSeason;
 $('quickBtn').onclick = () => openCircuits('race');
@@ -513,6 +630,8 @@ function update(dt){
     else if (e.type === 'finish') onFinish();
     else if (e.type === 'hit'){ thud(); G.shake = 0.35; }
     else if (e.type === 'bump'){ thud(); G.shake = Math.max(G.shake, Math.min(0.35, e.rel / CAR.max * 2)); }
+    else if (e.type === 'pitIn'){ wrench(); showBanner(`<b>PIT STOP</b><span>${COMPOUNDS[e.tyre].name}に交換中</span>`, 0); }
+    else if (e.type === 'pitOut'){ showBanner(`<b>PIT OUT</b><span>${COMPOUNDS[e.tyre].name}</span>`, 1500); }
   }
   r.events.length = 0;
 
@@ -541,9 +660,13 @@ function frame(now){
     if (c.surface !== 'road') bounce += (Math.random() - 0.5) * 3 * pct;
   }
 
+  // カメラの傾き：ハンドルとカーブに合わせて少しだけ
+  const pseg = track.at(c.z + c.off);
+  const roll = G.mode === 'paused' ? 0 : c.steer * 0.012 * Math.min(1, pct) + pseg.curve * Math.min(1, pct) * 0.002;
   render({
-    track, z: c.z, x: c.x, steer: c.steer, brake: c.braking,
-    car: playerArt, cars: G.others, skyOff: G.skyOff, lights: G.lights, shake, bounce,
+    track, env: G.env, z: c.z, x: c.x, steer: c.steer, brake: c.braking,
+    car: playerArt, cars: G.others.filter(o => !o.inPit), skyOff: G.skyOff, lights: G.lights, shake, bounce,
+    roll, speedPct: Math.min(1, pct), time: G.t,
   });
 
   const racing = G.mode === 'lights' || G.mode === 'race' || G.mode === 'finished' || G.mode === 'paused';
@@ -560,18 +683,42 @@ function frame(now){
       rpm: moving ? ge.rpm : (G.mode === 'lights' ? 0.55 + 0.1 * Math.sin(G.t * 9) : 0),
     });
     drawMap(track, posOf(c, track), G.others.map(o => ({ z: posOf(o, track), color: mapColor(o.team) })));
+    // タイヤ
+    const tc = COMPOUNDS[c.tyre];
+    $('hTyre').style.setProperty('--tc', tc.color);
+    if ($('hTyreC').textContent !== tc.short) $('hTyreC').textContent = tc.short;
+    const left = Math.max(0, Math.round((1 - c.wear) * 100)) + '%';
+    if ($('hWear').textContent !== left) $('hWear').textContent = left;
+    $('hTyre').classList.toggle('worn', c.wear > 0.6);
+    refreshPit();
+    if (c.inPit) showBanner(`<b>PIT STOP</b><span>${COMPOUNDS[c.newTyre].name}に交換中　あと${Math.max(0, c.pitT).toFixed(1)}秒</span>`, 0);
+    // 効果音：タイヤのきしみ・風・芝・近くの車・雨
+    let near = 0;
+    for (const o of G.others){
+      if (o.inPit) continue;
+      const dz = Math.abs(((posOf(o, track) - posOf(c, track)) % track.length + track.length * 1.5) % track.length - track.length / 2);
+      near = Math.max(near, Math.max(0, 1 - dz / (25 * SEG)) * Math.max(0, 1 - Math.abs(o.x - c.x) / 2));
+    }
+    const scrub = Math.min(1, Math.abs(c.steer) * pct * pct * (2 - c.grip) * 1.2 + (input.brake ? pct * 0.6 : 0));
+    setRaceSounds({ on: G.mode === 'race' || G.mode === 'finished', speed: Math.min(1, pct), scrub, surface: c.surface, rival: near, rivalRpm: 0.7, rain: G.weather === 'rain' });
     if (G.mode === 'race') setEngine(ge.rpm, input.brake ? 0 : 1, true);
     else if (G.mode === 'finished') setEngine(ge.rpm * 0.8, 0.2, true);
     else if (G.mode === 'lights') setEngine(0.35 + 0.08 * Math.sin(G.t * 9), 0.3, true);
     else setEngine(0, 0, false);
   } else {
     setEngine(0, 0, false);
+    setRaceSounds({ on: false, speed: 0, scrub: 0, surface: 'road', rival: 0, rain: false });
   }
   requestAnimationFrame(frame);
 }
 
 buildDiff();
+buildLaps();
+setBgmEnabled(SAVE.settings.bgm);
 showTitle();
+// 最初のタップで音を出せるようにする（iPhone は操作のあとでないと音が出ない）
+const unlock = () => { initAudio(); setBgmEnabled(SAVE.settings.bgm); document.removeEventListener('pointerdown', unlock, true); };
+document.addEventListener('pointerdown', unlock, true);
 requestAnimationFrame(frame);
 setupOffline();
 if (loaded === 'broken') toast('セーブデータを読めなかったため、新しく始めました（元のデータは別名で保管）', 4000);

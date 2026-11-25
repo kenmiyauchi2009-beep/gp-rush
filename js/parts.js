@@ -109,9 +109,11 @@ export const INV_MAX = 40;
 
 // ---- 賞金とパーツのもらえ方 ----
 const PRIZE = [1200, 950, 800, 680, 580, 500, 430, 370, 320, 280, 240, 210, 190, 170, 160, 150, 140, 130, 120, 110];
-export function prizeFor(pos, { season = false, pole = false, fastest = false } = {}){
+export function prizeFor(pos, { season = false, pole = false, fastest = false, laps = 3 } = {}){
   let cr = PRIZE[pos - 1] || 100;
-  if (season) cr = Math.round(cr * 1.5);
+  if (season) cr = cr * 1.5;
+  // 長いレースほど多い（3周を1として、5周で約1.4倍、8周で約2倍）
+  cr = Math.round(cr * Math.pow((laps === Infinity ? 3 : laps) / 3, 0.7));
   const bonus = (pole ? 200 : 0) + (fastest ? 150 : 0);
   return { cr: cr + bonus, base: cr, bonus };
 }

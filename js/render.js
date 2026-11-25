@@ -11,7 +11,7 @@ export const CAM = {
 };
 export const PLAYER_Z = CAM.height * CAM.depth;   // カメラから自分の車までの距離
 
-const V = { cv: null, g: null, W: 0, H: 0, K: 0, HOR: 0, dpr: 1, layers: null, fogRgb: [0, 0, 0], tintRgb: null, tintK: 0, key: '' };
+const V = { cv: null, g: null, W: 0, H: 0, K: 0, HOR: 0, dpr: 1, layers: null, fogRgb: [0, 0, 0], tintRgb: null, tintK: 0, key: '', fogK: 1, wet: false, night: false, t: 0, drops: null };
 
 export function setupRender(cv){
   V.cv = cv;
@@ -52,7 +52,8 @@ function fogC(hex, f){
   }
   return c;
 }
-const fogAt = n => { const t = n / CAM.dist; return Math.min(1, t * t * 1.15) * 0.92; };
+// 霧（雨の日は濃い：V.fogK）
+const fogAt = n => { const t = n / CAM.dist; return Math.min(1, t * t * 1.15 * V.fogK) * 0.92; };
 
 // ---- 背景（雲・遠景・近景）。横につながる絵を作って、カーブに合わせて横に流す ----
 const mk = (w, h) => { const c = document.createElement('canvas'); c.width = Math.max(1, w); c.height = Math.max(1, h); return c; };
@@ -154,6 +155,9 @@ function buildLayers(th){
   V.tintRgb = th.tint ? hexRgb(th.tint[0]) : null;
   V.tintK = th.tint ? th.tint[1] : 0;
   V.key = th.fog + (th.tint ? th.tint.join() : '');
+  V.fogK = th.fogK || 1;
+  V.wet = !!th.wet;
+  V.night = th.time === '夜';
   const TW = Math.ceil(W * 1.6);
   const sky = g.createLinearGradient(0, 0, 0, V.HOR);
   sky.addColorStop(0, th.sky[0]); sky.addColorStop(0.6, th.sky[1]); sky.addColorStop(1, th.sky[2]);
@@ -170,7 +174,9 @@ function buildLayers(th){
         c.fillRect(r() * TW, r() * clouds.height * 0.8, s, s);
       }
     }
-    const cc = th.tint ? hexRgb(th.tint[0]).map(v => Math.round(255 + (v - 255) * th.tint[1] * 1.6)) : [255, 255, 255];
+    let cc = th.tint ? hexRgb(th.tint[0]).map(v => Math.round(255 + (v - 255) * th.tint[1] * 1.6)) : [255, 255, 255];
+    // くもり・雨の雲は灰色
+    if (th.cloudGrey) cc = cc.map(v => Math.round(v + (120 - v) * th.cloudGrey));
     const col = a => `rgba(${cc[0]},${cc[1]},${cc[2]},${a})`;
     const count = Math.round(9 * (th.clouds || 0));
     // 横に平たい雲（ぼかした楕円を重ねる）
@@ -252,7 +258,8 @@ function drawSegment(seg){
   band(seg, -KERB, -1, fogC(c.kerb, f));
   band(seg, 1, KERB, fogC(c.kerb, f));
   // 路面
-  band(seg, -1, 1, fogC(c.road, f));
+  // 濡れた路面は暗い
+  band(seg, -1, 1, fogC(V.wet ? (seg.dark ? '#44484f' : '#40444b') : c.road, f));
   // 白線
   if (p1.w > 2){
     band(seg, -0.985, -0.95, fogC(c.line, f));
@@ -380,6 +387,47 @@ function drawCarAt(seg, c){
   if (clipH >= h) return;
   g.drawImage(fr, 0, 0, fr.width, fr.height * (1 - clipH / h), dx, dy, w, h - clipH);
   if (c.braking > 0.05 && clipH < h * 0.3) drawBrakeGlow(g, dx, dy, w, h, c.braking);
+  if (clipH < h * 0.3) rearLight(dx, dy, w, h);
+  // 雨の日の水しぶき
+  if (V.wet && c.speed > 3000 && clipH === 0) spray(x, y, w, Math.min(1, c.speed / 12000));
+}
+
+// 雨・夜は後ろの赤いランプが点滅する
+function rearLight(x, y, w, h){
+  if (!V.wet && !V.night) return;
+  if ((V.t * 4) % 1 > 0.55) return;
+  drawBrakeGlow(V.g, x, y, w, h, 0.55);
+}
+
+// 水しぶき（車の後ろに白いもや）
+function spray(cx, by, w, k){
+  const g = V.g, rw = w * 0.75, rh = w * 0.28;
+  const gg = g.createRadialGradient(cx, by - rh * 0.4, 0, cx, by - rh * 0.4, rw);
+  gg.addColorStop(0, `rgba(220,228,238,${0.32 * k})`); gg.addColorStop(1, 'rgba(220,228,238,0)');
+  g.save(); g.translate(cx, by - rh * 0.4); g.scale(1, rh / rw); g.translate(-cx, -(by - rh * 0.4));
+  g.fillStyle = gg; g.fillRect(cx - rw, by - rh * 0.4 - rw, rw * 2, rw * 2);
+  g.restore();
+}
+
+// 雨粒（画面の上に斜めの線）
+function drawRain(v){
+  const g = V.g, W = V.W, H = V.H;
+  if (!V.drops || V.drops.W !== W){
+    const d = [];
+    for (let i = 0; i < 160; i++) d.push([Math.random(), Math.random(), 0.6 + Math.random() * 0.8]);
+    V.drops = { W, d };
+  }
+  const t = V.t, sp = v.speedPct || 0;
+  const len = H * (0.03 + 0.05 * sp), slant = (v.steer || 0) * 0.25 + 0.15;
+  g.strokeStyle = 'rgba(210,220,235,0.35)';
+  g.lineWidth = Math.max(1, V.dpr * 0.8);
+  g.beginPath();
+  for (const [x0, y0, s] of V.drops.d){
+    const y = ((y0 + t * (1.4 + sp) * s) % 1) * H;
+    const x = ((x0 + t * slant * 0.3) % 1 + 1) % 1 * W;
+    g.moveTo(x, y); g.lineTo(x - slant * len, y + len * s);
+  }
+  g.stroke();
 }
 
 function drawPlayer(v){
@@ -391,13 +439,17 @@ function drawPlayer(v){
   const y = V.HOR + V.K - h + (v.bounce || 0) * V.dpr;
   g.drawImage(fr, x, y, w, h);
   if (v.brake > 0.05) drawBrakeGlow(g, x, y, w, h, v.brake);
+  rearLight(x, y, w, h);
+  if (V.wet && v.speedPct > 0.25) spray(V.W / 2, y + h, w, v.speedPct);
 }
 
-// v = { track, z, x, steer, brake, car, skyOff, lights, shake, bounce, cars（ライバル車の配列） }
+// v = { track, env（天気に合わせた景色）, z, x, steer, brake, car, skyOff, lights, shake, bounce, roll, speedPct, time, cars（ライバル車の配列） }
 export function render(v){
   const { track } = v;
   const g = V.g, W = V.W, H = V.H;
-  if (!V.layers || V.layers.th !== track.theme) V.layers = buildLayers(track.theme);
+  V.t = v.time || 0;
+  const th = v.env || track.theme;
+  if (!V.layers || V.layers.th !== th) V.layers = buildLayers(th);
 
   const N = track.N, segs = track.segs;
   const base = track.at(v.z);
@@ -411,6 +463,14 @@ export function render(v){
 
   g.save();
   if (v.shake) g.translate(0, Math.round(v.shake * V.dpr));
+  // カメラの傾き（少し拡大して、四隅が空かないようにする）
+  if (v.roll){
+    g.translate(W / 2, H * 0.6);
+    g.rotate(v.roll);
+    const k = 1 + Math.abs(v.roll) * 1.6;
+    g.scale(k, k);
+    g.translate(-W / 2, -H * 0.6);
+  }
   drawBackground(v.skyOff || 0, playerY);
 
   let maxy = H, xAcc = 0, dx = -(base.curve * basePct);
@@ -462,4 +522,5 @@ export function render(v){
     }
   }
   g.restore();
+  if (V.wet) drawRain(v);
 }
